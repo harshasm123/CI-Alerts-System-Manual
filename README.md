@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Competitive Intelligence Alert System
 
 A production-grade AWS-based system that automatically ingests global drug/molecule-related news and produces daily summary emails at 9 AM for each user based on their saved molecule watchlist.
@@ -129,3 +130,7 @@ See individual component READMEs:
 - [Infrastructure](./infrastructure/README.md)
 - [Frontend](./frontend/README.md)
 - [Lambdas](./lambdas/README.md)
+=======
+# CI-Alerts-System-Manual
+CI alert system final
+>>>>>>> 1f029c951abb4ba02aed7f36bb6d876166c32fcc
