@@ -86,7 +86,32 @@ REM Push to GitHub
 echo ⬆️  Pushing to GitHub...
 set /p GITHUB_TOKEN="Enter your GitHub Personal Access Token: "
 
-git push https://%GITHUB_TOKEN%@github.com/harshasm123/CI-Alerts-System-Manual.git main
+echo.
+echo Choose push option:
+echo 1. Normal push (will fail if remote has changes)
+echo 2. Pull and merge first (recommended)
+echo 3. Force push (overwrites remote - use with caution)
+set /p PUSH_OPTION="Enter option (1/2/3): "
+
+if "%PUSH_OPTION%"=="1" (
+    git push https://%GITHUB_TOKEN%@github.com/harshasm123/CI-Alerts-System-Manual.git main
+) else if "%PUSH_OPTION%"=="2" (
+    echo 📥 Pulling remote changes...
+    git pull https://%GITHUB_TOKEN%@github.com/harshasm123/CI-Alerts-System-Manual.git main --no-rebase
+    echo 📤 Pushing merged changes...
+    git push https://%GITHUB_TOKEN%@github.com/harshasm123/CI-Alerts-System-Manual.git main
+) else if "%PUSH_OPTION%"=="3" (
+    echo ⚠️  Force pushing...
+    git push https://%GITHUB_TOKEN%@github.com/harshasm123/CI-Alerts-System-Manual.git main --force
+) else (
+    echo Invalid option. Exiting.
+    exit /b 1
+)
+
+if errorlevel 1 (
+    echo ❌ Push failed!
+    exit /b 1
+)
 
 echo ✅ Successfully pushed to GitHub!
 echo 🔗 Repository: %REPO_URL%
