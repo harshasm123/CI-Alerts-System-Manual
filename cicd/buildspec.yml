@@ -1,0 +1,88 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+      nodejs: 18
+    commands:
+      - echo Installing dependencies
+      - npm install -g aws-cdk
+      - pip install --upgrade pip
+      - pip install boto3 requests beautifulsoup4 feedparser python-dateutil urllib3 lxml
+
+  pre_build:
+    commands:
+      - echo Pre-build phase started on `date`
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
+
+  build:
+    commands:
+      - echo Build started on `date`
+      
+      # Build and push Docker image for frontend
+      - echo Building the Docker image for frontend...
+      - cd frontend
+      - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
+      - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $REPOSITORY_URI:$IMAGE_TAG
+      - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $REPOSITORY_URI:latest
+      - cd ..
+      
+      # Package Lambda functions
+      - echo Packaging Lambda functions...
+      - cd lambdas
+      - zip -r lambda-deployment.zip . -x "*.git*" "*.pyc" "__pycache__/*"
+      - cd ..
+      
+      # Build CDK infrastructure
+      - echo Building CDK infrastructure...
+      - cd infrastructure
+      - npm install
+      - npm run build
+      - cdk synth
+      - cd ..
+
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      
+      # Push Docker image
+      - echo Pushing the Docker image...
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - docker push $REPOSITORY_URI:latest
+      
+      # Update Lambda functions
+      - echo Updating Lambda functions...
+      - aws lambda update-function-code --function-name ci-alert-pubmed-ingestion --zip-file fileb://lambdas/lambda-deployment.zip || echo "Lambda function not found, will be created by CDK"
+      - aws lambda update-function-code --function-name ci-alert-clinical-trials-ingestion --zip-file fileb://lambdas/lambda-deployment.zip || echo "Lambda function not found, will be created by CDK"
+      - aws lambda update-function-code --function-name ci-alert-fda-ingestion --zip-file fileb://lambdas/lambda-deployment.zip || echo "Lambda function not found, will be created by CDK"
+      - aws lambda update-function-code --function-name ci-alert-ema-ingestion --zip-file fileb://lambdas/lambda-deployment.zip || echo "Lambda function not found, will be created by CDK"
+      - aws lambda update-function-code --function-name ci-alert-wipo-ingestion --zip-file fileb://lambdas/lambda-deployment.zip || echo "Lambda function not found, will be created by CDK"
+      - aws lambda update-function-code --function-name ci-alert-processor --zip-file fileb://lambdas/lambda-deployment.zip || echo "Lambda function not found, will be created by CDK"
+      - aws lambda update-function-code --function-name ci-alert-daily-digest --zip-file fileb://lambdas/lambda-deployment.zip || echo "Lambda function not found, will be created by CDK"
+      - aws lambda update-function-code --function-name ci-alert-watchlist-api --zip-file fileb://lambdas/lambda-deployment.zip || echo "Lambda function not found, will be created by CDK"
+      - aws lambda update-function-code --function-name ci-alert-insights-api --zip-file fileb://lambdas/lambda-deployment.zip || echo "Lambda function not found, will be created by CDK"
+      - aws lambda update-function-code --function-name ci-alert-user-settings-api --zip-file fileb://lambdas/lambda-deployment.zip || echo "Lambda function not found, will be created by CDK"
+      
+      # Deploy CDK infrastructure
+      - echo Deploying CDK infrastructure...
+      - cd infrastructure
+      - cdk deploy --all --require-approval never
+      - cd ..
+      
+      # Update ECS service
+      - echo Updating ECS service...
+      - aws ecs update-service --cluster $ECS_CLUSTER_NAME --service $ECS_SERVICE_NAME --force-new-deployment || echo "ECS service not found, will be created by CDK"
+      
+      # Write image definitions file for ECS deployment
+      - printf '[{"name":"CIAlertContainer","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
+    - lambdas/lambda-deployment.zip
+    - infrastructure/cdk.out/**/*

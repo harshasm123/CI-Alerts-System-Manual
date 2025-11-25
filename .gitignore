@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# CDK
+cdk.out/
+.cdk.staging/
+
+# Environment
+.env
+.env.local
+*.pem
+*.key
+
+# AWS
+.aws/
+aws-exports.js
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+*.zip
+
+# Logs
+*.log
+npm-debug.log*

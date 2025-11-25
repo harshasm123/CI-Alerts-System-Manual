@@ -1,0 +1,78 @@
+#!/bin/bash
+
+# Prerequisites Setup Script for CI Alert System
+set -e
+
+echo "🔧 Setting up prerequisites for CI Alert System..."
+
+# Check OS
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+    echo "❌ Windows detected. Please use WSL or Linux/macOS"
+    exit 1
+fi
+
+# Install AWS CLI v2
+if ! command -v aws &> /dev/null; then
+    echo "📦 Installing AWS CLI v2..."
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    unzip awscliv2.zip
+    sudo ./aws/install
+    rm -rf aws awscliv2.zip
+fi
+
+# Install Node.js 18
+if ! command -v node &> /dev/null || [[ $(node -v | cut -d'.' -f1 | cut -d'v' -f2) -lt 18 ]]; then
+    echo "📦 Installing Node.js 18..."
+    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+    sudo apt-get install -y nodejs
+fi
+
+# Install Python 3.11
+if ! command -v python3.11 &> /dev/null; then
+    echo "📦 Installing Python 3.11..."
+    sudo apt-get update
+    sudo apt-get install -y python3.11 python3.11-pip python3.11-venv
+fi
+
+# Install Docker
+if ! command -v docker &> /dev/null; then
+    echo "📦 Installing Docker..."
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sudo sh get-docker.sh
+    sudo usermod -aG docker $USER
+    rm get-docker.sh
+fi
+
+# Install AWS CDK
+if ! command -v cdk &> /dev/null; then
+    echo "📦 Installing AWS CDK..."
+    npm install -g aws-cdk
+fi
+
+# Configure AWS CLI
+echo "🔐 Configuring AWS CLI..."
+if [ ! -f ~/.aws/credentials ]; then
+    echo "Please enter your AWS credentials:"
+    aws configure
+else
+    echo "AWS credentials already configured. Reconfigure? (y/N)"
+    read -r response
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        aws configure
+    fi
+fi
+
+# Verify AWS access
+echo "🔍 Verifying AWS access..."
+aws sts get-caller-identity
+
+# Enable Bedrock models
+echo "🤖 Enabling Bedrock models..."
+aws bedrock put-model-invocation-logging-configuration --logging-config '{}'
+echo "⚠️  Please enable Claude 3 Sonnet and Titan Embeddings in AWS Console > Bedrock > Model Access"
+
+echo "✅ Prerequisites setup complete!"
+echo ""
+echo "Next steps:"
+echo "1. Enable Bedrock models in AWS Console"
+echo "2. Run: ./deploy.sh"
