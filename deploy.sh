@@ -5,8 +5,12 @@ set -e
 
 echo "🚀 Starting CI Alert System Deployment"
 
-# Configuration
-REGION=${AWS_REGION:-us-east-1}
+# Configuration - Get region from AWS CLI config
+REGION=$(aws configure get region)
+if [ -z "$REGION" ]; then
+    echo "⚠️  No region configured in AWS CLI. Using us-east-1 as default."
+    REGION="us-east-1"
+fi
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 DATA_BUCKET="ci-alert-data-${ACCOUNT_ID}-${REGION}"
 
