@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
-import { CIAlertStack } from './ci-alert-stack';
+import { CIAlertStack } from '../lib/ci-alert-stack';
 
 const app = new cdk.App();
 
@@ -10,7 +10,4 @@ new CIAlertStack(app, 'CIAlertStack', {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
   },
-  description: 'CI Alert System - Healthcare Competitive Intelligence',
 });
-
-app.synth();

@@ -1,0 +1,193 @@
+import * as cdk from 'aws-cdk-lib';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
+import { Construct } from 'constructs';
+
+export class CIAlertStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+    super(scope, id, props);
+
+    // DynamoDB Tables
+    const insightsTable = new dynamodb.Table(this, 'InsightsTable', {
+      partitionKey: { name: 'molecule', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    const watchlistTable = new dynamodb.Table(this, 'WatchlistTable', {
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'molecule', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    const userSettingsTable = new dynamodb.Table(this, 'UserSettingsTable', {
+      partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // S3 Buckets
+    const dataBucket = new s3.Bucket(this, 'DataBucket', {
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      lifecycleRules: [{
+        enabled: true,
+        transitions: [{
+          storageClass: s3.StorageClass.INTELLIGENT_TIERING,
+          transitionAfter: cdk.Duration.days(30),
+        }],
+      }],
+    });
+
+    // SQS Queue
+    const eventQueue = new sqs.Queue(this, 'EventQueue', {
+      visibilityTimeout: cdk.Duration.seconds(300),
+      retentionPeriod: cdk.Duration.days(14),
+    });
+
+    // Cognito User Pool
+    const userPool = new cognito.UserPool(this, 'UserPool', {
+      selfSignUpEnabled: true,
+      signInAliases: { email: true },
+      autoVerify: { email: true },
+      passwordPolicy: {
+        minLength: 8,
+        requireLowercase: true,
+        requireUppercase: true,
+        requireDigits: true,
+        requireSymbols: true,
+      },
+    });
+
+    const userPoolClient = userPool.addClient('AppClient', {
+      authFlows: {
+        userPassword: true,
+        userSrp: true,
+      },
+    });
+
+    // Lambda Execution Role
+    const lambdaRole = new iam.Role(this, 'LambdaRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
+      managedPolicies: [
+        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
+      ],
+    });
+
+    insightsTable.grantReadWriteData(lambdaRole);
+    watchlistTable.grantReadWriteData(lambdaRole);
+    userSettingsTable.grantReadWriteData(lambdaRole);
+    dataBucket.grantReadWrite(lambdaRole);
+    eventQueue.grantSendMessages(lambdaRole);
+    eventQueue.grantConsumeMessages(lambdaRole);
+
+    lambdaRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: ['*'],
+    }));
+
+    // Processor Lambda
+    const processorFunction = new lambda.Function(this, 'ProcessorFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'processor.lambda_handler',
+      code: lambda.Code.fromAsset('../lambdas/processing'),
+      timeout: cdk.Duration.seconds(300),
+      memorySize: 512,
+      role: lambdaRole,
+      environment: {
+        INSIGHTS_TABLE: insightsTable.tableName,
+        DATA_BUCKET: dataBucket.bucketName,
+      },
+    });
+
+    // Ingestion Lambdas
+    const pubmedFunction = new lambda.Function(this, 'PubMedFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'pubmed_ingestion.lambda_handler',
+      code: lambda.Code.fromAsset('../lambdas/ingestion'),
+      timeout: cdk.Duration.seconds(60),
+      role: lambdaRole,
+      environment: {
+        QUEUE_URL: eventQueue.queueUrl,
+        DATA_BUCKET: dataBucket.bucketName,
+      },
+    });
+
+    // API Lambdas
+    const watchlistFunction = new lambda.Function(this, 'WatchlistFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'watchlist_api.lambda_handler',
+      code: lambda.Code.fromAsset('../lambdas/api'),
+      timeout: cdk.Duration.seconds(30),
+      role: lambdaRole,
+      environment: {
+        WATCHLIST_TABLE: watchlistTable.tableName,
+      },
+    });
+
+    const insightsFunction = new lambda.Function(this, 'InsightsFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'insights_api.lambda_handler',
+      code: lambda.Code.fromAsset('../lambdas/api'),
+      timeout: cdk.Duration.seconds(30),
+      role: lambdaRole,
+      environment: {
+        INSIGHTS_TABLE: insightsTable.tableName,
+      },
+    });
+
+    // API Gateway
+    const api = new apigateway.RestApi(this, 'CIAlertAPI', {
+      restApiName: 'CI Alert API',
+      defaultCorsPreflightOptions: {
+        allowOrigins: apigateway.Cors.ALL_ORIGINS,
+        allowMethods: apigateway.Cors.ALL_METHODS,
+      },
+    });
+
+    const watchlistResource = api.root.addResource('watchlist');
+    watchlistResource.addMethod('GET', new apigateway.LambdaIntegration(watchlistFunction));
+    watchlistResource.addMethod('POST', new apigateway.LambdaIntegration(watchlistFunction));
+    watchlistResource.addMethod('DELETE', new apigateway.LambdaIntegration(watchlistFunction));
+
+    const insightsResource = api.root.addResource('insights');
+    insightsResource.addMethod('GET', new apigateway.LambdaIntegration(insightsFunction));
+
+    // EventBridge Rule for daily ingestion
+    const dailyRule = new events.Rule(this, 'DailyIngestionRule', {
+      schedule: events.Schedule.cron({ hour: '0', minute: '0' }),
+    });
+    dailyRule.addTarget(new targets.LambdaFunction(pubmedFunction));
+
+    // Outputs
+    new cdk.CfnOutput(this, 'ApiUrl', {
+      value: api.url,
+      description: 'API Gateway URL',
+    });
+
+    new cdk.CfnOutput(this, 'UserPoolId', {
+      value: userPool.userPoolId,
+      description: 'Cognito User Pool ID',
+    });
+
+    new cdk.CfnOutput(this, 'UserPoolClientId', {
+      value: userPoolClient.userPoolClientId,
+      description: 'Cognito User Pool Client ID',
+    });
+
+    new cdk.CfnOutput(this, 'DataBucketName', {
+      value: dataBucket.bucketName,
+      description: 'S3 Data Bucket Name',
+    });
+  }
+}
