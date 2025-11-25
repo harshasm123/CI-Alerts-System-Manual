@@ -54,6 +54,7 @@ echo "📦 Installing dependencies..."
 # Infrastructure dependencies
 cd infrastructure
 npm install
+npm install --save-dev @types/babel__generator @types/babel__template @types/istanbul-lib-report @types/yargs-parser
 cd ..
 
 # Lambda dependencies
