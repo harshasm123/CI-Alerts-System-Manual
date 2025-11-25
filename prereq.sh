@@ -27,11 +27,13 @@ if ! command -v node &> /dev/null || [[ $(node -v | cut -d'.' -f1 | cut -d'v' -f
     sudo apt-get install -y nodejs
 fi
 
-# Install Python 3.11
-if ! command -v python3.11 &> /dev/null; then
-    echo "📦 Installing Python 3.11..."
+# Install Python 3 (use system default)
+if ! command -v python3 &> /dev/null; then
+    echo "📦 Installing Python 3..."
     sudo apt-get update
-    sudo apt-get install -y python3.11 python3.11-pip python3.11-venv
+    sudo apt-get install -y python3 python3-pip python3-venv
+else
+    echo "✓ Python 3 already installed: $(python3 --version)"
 fi
 
 # Install Docker
