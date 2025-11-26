@@ -27,6 +27,13 @@ function App() {
   const [newMolecule, setNewMolecule] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [settings, setSettings] = useState({
+    emailFrequency: 'daily',
+    notificationEmail: '',
+    enableAlerts: true,
+    alertThreshold: 'medium'
+  });
 
   useEffect(() => {
     checkUser();
@@ -36,6 +43,7 @@ function App() {
     if (user) {
       loadWatchlist();
       loadInsights();
+      loadSettings();
     }
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -100,10 +108,12 @@ function App() {
       const res = await fetch(`${API_URL}watchlist?userId=${user.username}`, {
         headers: { Authorization: token }
       });
+      if (!res.ok) throw new Error('Failed to load watchlist');
       const data = await res.json();
-      setWatchlist(data.watchlist || []);
+      setWatchlist(data.watchlist || data.molecules || []);
     } catch (err) {
       console.error('Load watchlist error:', err);
+      setWatchlist([]);
     }
   };
 
@@ -113,27 +123,67 @@ function App() {
       const res = await fetch(`${API_URL}insights`, {
         headers: { Authorization: token }
       });
+      if (!res.ok) throw new Error('Failed to load insights');
       const data = await res.json();
       setInsights(data.insights || []);
     } catch (err) {
       console.error('Load insights error:', err);
+      setInsights([]);
+    }
+  };
+
+  const loadSettings = async () => {
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}user-settings?userId=${user.username}`, {
+        headers: { Authorization: token }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSettings(prev => ({ ...prev, ...data.settings }));
+      }
+    } catch (err) {
+      console.error('Load settings error:', err);
+    }
+  };
+
+  const saveSettings = async () => {
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}user-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: token },
+        body: JSON.stringify({ userId: user.username, settings })
+      });
+      if (res.ok) {
+        setError('Settings saved successfully!');
+        setTimeout(() => setError(''), 3000);
+      }
+    } catch (err) {
+      setError('Failed to save settings');
     }
   };
 
   const addMolecule = async (e) => {
     e.preventDefault();
     if (!newMolecule.trim()) return;
+    setError('');
     try {
       const token = await getAuthToken();
-      await fetch(`${API_URL}watchlist`, {
+      const res = await fetch(`${API_URL}watchlist`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: token },
         body: JSON.stringify({ userId: user.username, molecule: newMolecule })
       });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.message || 'Failed to add molecule');
+      }
       setNewMolecule('');
-      loadWatchlist();
+      await loadWatchlist();
     } catch (err) {
-      setError('Failed to add molecule');
+      console.error('Add molecule error:', err);
+      setError(err.message || 'Failed to add molecule');
     }
   };
 
@@ -154,7 +204,8 @@ function App() {
     return (
       <div className="App">
         <div className="auth-container">
-          <h1>CI Alert System</h1>
+          <h1>🧬 CI Alert System</h1>
+          <p>Pharmaceutical Competitive Intelligence Platform</p>
           <form onSubmit={isSignUp ? handleSignUp : handleSignIn}>
             <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
@@ -172,46 +223,162 @@ function App() {
   return (
     <div className="App">
       <header>
-        <h1>CI Alert System</h1>
-        <div>
+        <h1>🧬 CI Alert System</h1>
+        <div className="user-info">
           <span>{user.username}</span>
-          <button onClick={handleSignOut}>Sign Out</button>
+          <button onClick={handleSignOut} className="btn-secondary">Sign Out</button>
         </div>
       </header>
 
-      <div className="content">
-        <section className="watchlist-section">
-          <h2>My Watchlist</h2>
-          <form onSubmit={addMolecule}>
-            <input type="text" placeholder="Add molecule..." value={newMolecule} onChange={(e) => setNewMolecule(e.target.value)} />
-            <button type="submit">Add</button>
-          </form>
-          <ul>
-            {watchlist.map((mol) => (
-              <li key={mol}>
-                {mol}
-                <button onClick={() => removeMolecule(mol)}>Remove</button>
-              </li>
-            ))}
-          </ul>
-        </section>
+      <nav className="tabs">
+        <button className={activeTab === 'dashboard' ? 'active' : ''} onClick={() => setActiveTab('dashboard')}>Dashboard</button>
+        <button className={activeTab === 'watchlist' ? 'active' : ''} onClick={() => setActiveTab('watchlist')}>Watchlist</button>
+        <button className={activeTab === 'insights' ? 'active' : ''} onClick={() => setActiveTab('insights')}>Insights</button>
+        <button className={activeTab === 'settings' ? 'active' : ''} onClick={() => setActiveTab('settings')}>Settings</button>
+      </nav>
 
-        <section className="insights-section">
-          <h2>Recent Insights</h2>
-          {insights.length === 0 ? (
-            <p>No insights yet. Add molecules to your watchlist to receive alerts.</p>
-          ) : (
-            <ul>
-              {insights.map((insight, i) => (
-                <li key={i}>
+      <div className="content">
+        {error && <div className="alert">{error}</div>}
+
+        {activeTab === 'dashboard' && (
+          <div className="dashboard">
+            <h2>Dashboard</h2>
+            <div className="stats">
+              <div className="stat-card">
+                <h3>{watchlist.length}</h3>
+                <p>Molecules Tracked</p>
+              </div>
+              <div className="stat-card">
+                <h3>{insights.length}</h3>
+                <p>Total Insights</p>
+              </div>
+              <div className="stat-card">
+                <h3>{settings.enableAlerts ? 'Active' : 'Paused'}</h3>
+                <p>Alert Status</p>
+              </div>
+              <div className="stat-card">
+                <h3>{settings.emailFrequency}</h3>
+                <p>Email Frequency</p>
+              </div>
+            </div>
+            <div className="recent-activity">
+              <h3>Recent Insights</h3>
+              {insights.slice(0, 5).map((insight, i) => (
+                <div key={i} className="insight-preview">
                   <strong>{insight.molecule}</strong>
-                  <p>{insight.summary}</p>
+                  <p>{insight.summary?.substring(0, 150)}...</p>
                   <small>{new Date(insight.timestamp).toLocaleString()}</small>
-                </li>
+                </div>
               ))}
-            </ul>
-          )}
-        </section>
+              {insights.length === 0 && <p className="empty-state">No insights yet. Add molecules to start tracking.</p>}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'watchlist' && (
+          <section className="watchlist-section">
+            <h2>My Watchlist</h2>
+            <form onSubmit={addMolecule} className="add-form">
+              <input type="text" placeholder="Enter molecule name (e.g., pembrolizumab)" value={newMolecule} onChange={(e) => setNewMolecule(e.target.value)} />
+              <button type="submit" className="btn-primary">Add Molecule</button>
+            </form>
+            {watchlist.length === 0 ? (
+              <div className="empty-state">
+                <p>No molecules in your watchlist yet.</p>
+                <p>Add pharmaceutical molecules to track competitive intelligence.</p>
+              </div>
+            ) : (
+              <ul className="molecule-list">
+                {watchlist.map((item) => {
+                  const mol = typeof item === 'string' ? item : item.molecule;
+                  return (
+                    <li key={mol}>
+                      <span className="molecule-name">{mol}</span>
+                      <button onClick={() => removeMolecule(mol)} className="btn-danger">Remove</button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        )}
+
+        {activeTab === 'insights' && (
+          <section className="insights-section">
+            <h2>All Insights</h2>
+            {insights.length === 0 ? (
+              <div className="empty-state">
+                <p>No insights available yet.</p>
+                <p>Add molecules to your watchlist to receive AI-powered competitive intelligence alerts.</p>
+              </div>
+            ) : (
+              <div className="insights-list">
+                {insights.map((insight, i) => (
+                  <div key={i} className="insight-card">
+                    <div className="insight-header">
+                      <strong>{insight.molecule}</strong>
+                      <span className="insight-date">{new Date(insight.timestamp).toLocaleDateString()}</span>
+                    </div>
+                    <p>{insight.summary}</p>
+                    {insight.source && <small className="insight-source">Source: {insight.source}</small>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {activeTab === 'settings' && (
+          <section className="settings-section">
+            <h2>Settings</h2>
+            <div className="settings-form">
+              <div className="form-group">
+                <label>Notification Email</label>
+                <input 
+                  type="email" 
+                  value={settings.notificationEmail || user.username} 
+                  onChange={(e) => setSettings({...settings, notificationEmail: e.target.value})}
+                  placeholder={user.username}
+                />
+                <small>Email address where you'll receive alerts</small>
+              </div>
+
+              <div className="form-group">
+                <label>Email Frequency</label>
+                <select value={settings.emailFrequency} onChange={(e) => setSettings({...settings, emailFrequency: e.target.value})}>
+                  <option value="immediate">Immediate (as they happen)</option>
+                  <option value="daily">Daily Digest (9 AM)</option>
+                  <option value="weekly">Weekly Summary (Monday 9 AM)</option>
+                  <option value="never">Never (dashboard only)</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Alert Threshold</label>
+                <select value={settings.alertThreshold} onChange={(e) => setSettings({...settings, alertThreshold: e.target.value})}>
+                  <option value="all">All Updates</option>
+                  <option value="medium">Medium & High Priority</option>
+                  <option value="high">High Priority Only</option>
+                </select>
+                <small>Minimum importance level for alerts</small>
+              </div>
+
+              <div className="form-group checkbox">
+                <label>
+                  <input 
+                    type="checkbox" 
+                    checked={settings.enableAlerts} 
+                    onChange={(e) => setSettings({...settings, enableAlerts: e.target.checked})}
+                  />
+                  Enable email alerts
+                </label>
+                <small>Uncheck to pause all email notifications</small>
+              </div>
+
+              <button onClick={saveSettings} className="btn-primary">Save Settings</button>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );
