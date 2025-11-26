@@ -19,7 +19,7 @@ export class StorageStack extends cdk.Stack {
       tableName: 'ci-alert-insights',
       partitionKey: { name: 'insight_id', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.ON_DEMAND,
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
@@ -35,7 +35,7 @@ export class StorageStack extends cdk.Stack {
     this.userSettingsTable = new dynamodb.Table(this, 'UserSettingsTable', {
       tableName: 'ci-alert-user-settings',
       partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.ON_DEMAND,
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
@@ -45,7 +45,7 @@ export class StorageStack extends cdk.Stack {
       tableName: 'ci-alert-watchlist',
       partitionKey: { name: 'user_id', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'molecule', type: dynamodb.AttributeType.STRING },
-      billingMode: dynamodb.BillingMode.ON_DEMAND,
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
       pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
@@ -60,7 +60,7 @@ export class StorageStack extends cdk.Stack {
       lifecycleRules: [
         {
           id: 'intelligent-tiering',
-          status: s3.LifecycleRuleStatus.ENABLED,
+          enabled: true,
           transitions: [
             {
               storageClass: s3.StorageClass.INTELLIGENT_TIERING,
@@ -70,7 +70,7 @@ export class StorageStack extends cdk.Stack {
         },
         {
           id: 'archive-old-data',
-          status: s3.LifecycleRuleStatus.ENABLED,
+          enabled: true,
           transitions: [
             {
               storageClass: s3.StorageClass.GLACIER,

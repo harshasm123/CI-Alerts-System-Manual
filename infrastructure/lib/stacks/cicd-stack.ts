@@ -27,7 +27,7 @@ export class CicdStack extends cdk.Stack {
       lifecycleRules: [
         {
           id: 'delete-old-artifacts',
-          status: s3.LifecycleRuleStatus.ENABLED,
+          enabled: true,
           expiration: cdk.Duration.days(30),
         },
       ],

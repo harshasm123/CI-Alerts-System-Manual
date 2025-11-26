@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as actions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
@@ -42,7 +43,7 @@ export class MonitoringStack extends cdk.Stack {
         evaluationPeriods: 2,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       });
-      errorAlarm.addAlarmAction(new cloudwatch.SnsAction(alertTopic));
+      errorAlarm.addAlarmAction(new actions.SnsAction(alertTopic));
 
       // Duration Alarm
       const durationAlarm = new cloudwatch.Alarm(this, `${name}DurationAlarm`, {
@@ -56,7 +57,7 @@ export class MonitoringStack extends cdk.Stack {
         evaluationPeriods: 3,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       });
-      durationAlarm.addAlarmAction(new cloudwatch.SnsAction(alertTopic));
+      durationAlarm.addAlarmAction(new actions.SnsAction(alertTopic));
 
       // Throttle Alarm
       const throttleAlarm = new cloudwatch.Alarm(this, `${name}ThrottleAlarm`, {
@@ -70,7 +71,7 @@ export class MonitoringStack extends cdk.Stack {
         evaluationPeriods: 1,
         treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       });
-      throttleAlarm.addAlarmAction(new cloudwatch.SnsAction(alertTopic));
+      throttleAlarm.addAlarmAction(new actions.SnsAction(alertTopic));
     });
 
     // ECS Service Alarms
@@ -94,7 +95,7 @@ export class MonitoringStack extends cdk.Stack {
       evaluationPeriods: 3,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    ecsCpuAlarm.addAlarmAction(new cloudwatch.SnsAction(alertTopic));
+    ecsCpuAlarm.addAlarmAction(new actions.SnsAction(alertTopic));
 
     const ecsMemoryAlarm = new cloudwatch.Alarm(this, 'ECSMemoryAlarm', {
       alarmName: 'CIAlert-ECS-HighMemory',
@@ -113,7 +114,7 @@ export class MonitoringStack extends cdk.Stack {
       evaluationPeriods: 3,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    ecsMemoryAlarm.addAlarmAction(new cloudwatch.SnsAction(alertTopic));
+    ecsMemoryAlarm.addAlarmAction(new actions.SnsAction(alertTopic));
 
     // API Gateway Alarms
     const apiErrorAlarm = new cloudwatch.Alarm(this, 'APIErrorAlarm', {
@@ -132,7 +133,7 @@ export class MonitoringStack extends cdk.Stack {
       evaluationPeriods: 2,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    apiErrorAlarm.addAlarmAction(new cloudwatch.SnsAction(alertTopic));
+    apiErrorAlarm.addAlarmAction(new actions.SnsAction(alertTopic));
 
     const apiLatencyAlarm = new cloudwatch.Alarm(this, 'APILatencyAlarm', {
       alarmName: 'CIAlert-API-Latency',
@@ -150,7 +151,7 @@ export class MonitoringStack extends cdk.Stack {
       evaluationPeriods: 3,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    apiLatencyAlarm.addAlarmAction(new cloudwatch.SnsAction(alertTopic));
+    apiLatencyAlarm.addAlarmAction(new actions.SnsAction(alertTopic));
 
     // Cost Alarm
     const costAlarm = new cloudwatch.Alarm(this, 'CostAlarm', {
@@ -169,7 +170,7 @@ export class MonitoringStack extends cdk.Stack {
       evaluationPeriods: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    costAlarm.addAlarmAction(new cloudwatch.SnsAction(alertTopic));
+    costAlarm.addAlarmAction(new actions.SnsAction(alertTopic));
 
     // CloudWatch Dashboard
     const dashboard = new cloudwatch.Dashboard(this, 'CIAlertDashboard', {
