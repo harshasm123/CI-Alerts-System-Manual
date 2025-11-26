@@ -155,13 +155,31 @@ export class CIAlertStack extends cdk.Stack {
       },
     });
 
+    // Cognito Authorizer
+    const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'CognitoAuthorizer', {
+      cognitoUserPools: [userPool],
+    });
+
+    // Protected endpoints (require Cognito auth)
     const watchlistResource = api.root.addResource('watchlist');
-    watchlistResource.addMethod('GET', new apigateway.LambdaIntegration(watchlistFunction));
-    watchlistResource.addMethod('POST', new apigateway.LambdaIntegration(watchlistFunction));
-    watchlistResource.addMethod('DELETE', new apigateway.LambdaIntegration(watchlistFunction));
+    watchlistResource.addMethod('GET', new apigateway.LambdaIntegration(watchlistFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+    watchlistResource.addMethod('POST', new apigateway.LambdaIntegration(watchlistFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+    watchlistResource.addMethod('DELETE', new apigateway.LambdaIntegration(watchlistFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
 
     const insightsResource = api.root.addResource('insights');
-    insightsResource.addMethod('GET', new apigateway.LambdaIntegration(insightsFunction));
+    insightsResource.addMethod('GET', new apigateway.LambdaIntegration(insightsFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
 
     // EventBridge Rule for daily ingestion
     const dailyRule = new events.Rule(this, 'DailyIngestionRule', {
@@ -188,6 +206,11 @@ export class CIAlertStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'DataBucketName', {
       value: dataBucket.bucketName,
       description: 'S3 Data Bucket Name',
+    });
+
+    new cdk.CfnOutput(this, 'Region', {
+      value: this.region,
+      description: 'AWS Region',
     });
   }
 }

@@ -34,10 +34,13 @@ echo "  User Pool: $USER_POOL_ID"
 echo "  Client ID: $USER_POOL_CLIENT_ID"
 echo ""
 
-# Check if frontend directory exists
-if [ ! -d "frontend" ]; then
-  echo "❌ Frontend directory not found"
-  echo "   Creating basic React app..."
+# Remove old frontend if it exists
+if [ -d "frontend" ]; then
+  echo "🗑️  Removing old frontend..."
+  rm -rf frontend
+fi
+
+echo "📦 Creating new React app..."
   
   # Create basic frontend structure
   mkdir -p frontend/public frontend/src
@@ -186,7 +189,7 @@ function App() {
 export default App;
 EOF
 
-  echo "✅ Basic React app created"
+  echo "✅ React app created"
 fi
 
 # Build frontend

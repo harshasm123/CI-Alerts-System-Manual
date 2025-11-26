@@ -53,26 +53,24 @@ A production-grade AWS-based system that automatically ingests global drug/molec
 
 ## Quick Start
 
-1. **Prerequisites**
-   ```bash
-   npm install -g aws-cdk
-   pip install aws-cdk-lib
-   ```
+```bash
+# 1. Bootstrap CDK
+cd infrastructure
+cdk bootstrap
 
-2. **Deploy Infrastructure**
-   ```bash
-   cd infrastructure
-   npm install
-   cdk bootstrap
-   cdk deploy --all
-   ```
+# 2. Deploy all stacks
+cd ..
+bash deploy.sh
 
-3. **Deploy Application**
-   ```bash
-   cd frontend
-   docker build -t ci-alert-ui .
-   # Push to ECR and deploy via CodePipeline
-   ```
+# 3. Deploy frontend with authentication
+bash deploy-cognito-frontend.sh
+
+# 4. Create test user
+USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text)
+USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text)
+aws cognito-idp sign-up --client-id $USER_POOL_CLIENT_ID --username test@example.com --password Test123!
+aws cognito-idp admin-confirm-user --user-pool-id $USER_POOL_ID --username test@example.com
+```
 
 ## Architecture Components
 
@@ -92,9 +90,9 @@ A production-grade AWS-based system that automatically ingests global drug/molec
 - **VPC Endpoints**: Cost-optimized private connectivity
 
 ### User Interface
-- **React App**: Molecule watchlist management
-- **ECS/Fargate**: Containerized deployment
-- **Cognito**: User authentication with MFA
+- **React App**: Molecule watchlist management with AWS Amplify
+- **S3 + CloudFront**: Static hosting with CDN
+- **Cognito**: Email-based authentication with auto-verify
 
 ### Notifications
 - **Daily Digest**: 9 AM scheduled emails
@@ -133,10 +131,9 @@ A production-grade AWS-based system that automatically ingests global drug/molec
 
 ## 🚀 Quick Deploy
 
-1```bash
-./prereq.sh      # Install prerequisites
-./deploy.sh      # Deploy all 4 stacks
-./GET_URLS.sh    # Get deployed URLs
+```bash
+bash deploy.sh                    # Deploy infrastructure
+bash deploy-cognito-frontend.sh   # Deploy authenticated frontend
 ```
 
 ## 📁 Project Structure

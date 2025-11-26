@@ -1,307 +1,438 @@
-# CI Alert System - Deployment Guide
+# Complete Deployment Guide - CI Alert System with Cognito Authentication
 
-This guide provides step-by-step instructions for deploying the Competitive Intelligence Alert System on AWS.
+## Overview
+
+This guide covers deploying a production-grade CI Alert System with:
+- Cognito authentication
+- React frontend with AWS Amplify
+- Protected API endpoints
+- User-specific watchlists
+- AI-powered insights
+
+---
 
 ## Prerequisites
 
-### Required Tools
-- AWS CLI v2 (configured with appropriate permissions)
-- Node.js 18+ and npm
-- Python 3.11+
-- Docker
-- Git
-
-### AWS Permissions
-Your AWS user/role needs the following permissions:
-- Full access to: Lambda, API Gateway, DynamoDB, S3, SQS, SNS, SES
-- ECS/Fargate, CloudFront, WAF, Cognito, EventBridge
-- IAM role creation and management
-- Bedrock model access
-- CloudWatch and X-Ray
-
-### AWS Service Limits
-Ensure your account has sufficient limits for:
-- Lambda concurrent executions (100+)
-- DynamoDB tables (10+)
-- API Gateway APIs (10+)
-- ECS tasks (10+)
-
-## Quick Deployment
-
-### Option 1: Automated Deployment (Recommended)
-
+### Required Software
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd ci-alert-system
+# Node.js 18+
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
 
-# Make deployment script executable
-chmod +x deploy.sh
-
-# Run deployment
-./deploy.sh
-```
-
-### Option 2: Manual Deployment
-
-Follow the steps below for manual deployment with more control.
-
-## Manual Deployment Steps
-
-### Step 1: Environment Setup
-
-```bash
-# Set AWS region
-export AWS_REGION=us-east-1
-
-# Install AWS CDK
+# AWS CDK
 npm install -g aws-cdk
 
-# Bootstrap CDK (one-time per account/region)
-cdk bootstrap
+# Python 3
+sudo apt-get install -y python3-pip
+pip3 install boto3
+
+# AWS CLI
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
 ```
 
-### Step 2: Deploy Infrastructure
+### AWS Configuration
+```bash
+aws configure
+# Access Key ID: YOUR_ACCESS_KEY
+# Secret Access Key: YOUR_SECRET_KEY
+# Region: us-east-1
+# Output: json
+```
+
+---
+
+## Step 1: Bootstrap CDK
 
 ```bash
-# Navigate to infrastructure directory
+# Check bootstrap status
+bash check-bootstrap.sh
+
+# Bootstrap if needed
 cd infrastructure
-
-# Install dependencies
-npm install
-
-# Build TypeScript
-npm run build
-
-# Deploy all stacks
-cdk deploy --all --require-approval never
+cdk bootstrap
+cd ..
 ```
 
-### Step 3: Set Up Bedrock Agent
-
-```bash
-# Get the data bucket name from CDK outputs
-DATA_BUCKET=$(aws cloudformation describe-stacks --stack-name CIAlert-Storage --query 'Stacks[0].Outputs[?OutputKey==`DataBucketName`].OutputValue' --output text)
-
-# Run Bedrock setup script
-python3 scripts/setup_bedrock_agent.py --data-bucket $DATA_BUCKET --region $AWS_REGION
+**Expected Output:**
+```
+✅ CDKToolkit is healthy
+✅ Bucket exists: s3://cdk-hnb659fds-assets-...
+✅ Version: 21
 ```
 
-### Step 4: Deploy Frontend
+---
+
+## Step 2: Deploy Infrastructure
 
 ```bash
-# Get ECR repository URI
-ECR_REPO=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`ECRRepositoryUri`].OutputValue' --output text)
-
-# Login to ECR
-aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
-
-# Build and push Docker image
-cd frontend
-docker build -t ci-alert-frontend:latest .
-docker tag ci-alert-frontend:latest $ECR_REPO:latest
-docker push $ECR_REPO:latest
-
-# Update ECS service
-aws ecs update-service --cluster ci-alert-cluster --service ci-alert-service --force-new-deployment
+bash deploy.sh
 ```
 
-### Step 5: Configure Monitoring
+**This deploys 4 stacks:**
 
-```bash
-# Create CloudWatch dashboard
-aws cloudwatch put-dashboard --dashboard-name "CI-Alert-System" --dashboard-body file://monitoring/dashboard.json
+### 1. CIAlertStack (Core)
+- 3 DynamoDB tables (Insights, Watchlist, UserSettings)
+- 4 Lambda functions (Processor, PubMed, Watchlist API, Insights API)
+- API Gateway with Cognito authorizer
+- Cognito User Pool (email sign-in, auto-verify)
+- S3 bucket with intelligent tiering
+- SQS queue
+- EventBridge daily schedule
+
+### 2. CIAlert-Frontend
+- S3 bucket for static hosting
+- CloudFront distribution with HTTPS
+- OAI for secure S3 access
+
+### 3. CIAlert-Monitoring
+- CloudWatch Dashboard
+- 3 CloudWatch Alarms (5xx errors, latency, Lambda errors)
+- SNS topic for alerts
+
+### 4. CIAlert-CICD (Optional)
+- CodePipeline with GitHub source
+- CodeBuild projects
+- Automated deployments
+
+**Deployment Time:** ~8-10 minutes
+
+**Expected Output:**
+```
+🎉 Deployment Complete!
+📊 Deployed Stacks:
+  ✓ CIAlertStack (Core)
+  ✓ CIAlert-Frontend (S3 + CloudFront)
+  ✓ CIAlert-Monitoring (CloudWatch)
+  ✓ CIAlert-CICD (CodePipeline)
+
+📋 Stack Outputs:
+  Region: us-east-1
+  Account: 992167236365
+  API URL: https://abc123.execute-api.us-east-1.amazonaws.com/prod/
+  User Pool: us-east-1_ABC123
 ```
 
-## Post-Deployment Configuration
+---
 
-### 1. Configure SES for Email Notifications
+## Step 3: Deploy Frontend with Authentication
 
 ```bash
-# Verify sender email address
-aws ses verify-email-identity --email-address noreply@yourdomain.com
-
-# Update Lambda environment variables with verified email
-aws lambda update-function-configuration --function-name ci-alert-daily-digest --environment Variables='{SENDER_EMAIL=noreply@yourdomain.com}'
+bash deploy-cognito-frontend.sh
 ```
 
-### 2. Configure Cognito User Pool
+**This script:**
+1. Retrieves Cognito config from CloudFormation outputs
+2. Creates `.env` file with API URL, User Pool ID, Client ID, Region
+3. Installs npm dependencies (React, AWS Amplify)
+4. Builds React app with authentication
+5. Uploads to S3
+6. Invalidates CloudFront cache
 
-```bash
-# Get User Pool ID
-USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-Auth --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text)
+**Deployment Time:** ~3-5 minutes
 
-# Create admin user (optional)
-aws cognito-idp admin-create-user --user-pool-id $USER_POOL_ID --username admin --user-attributes Name=email,Value=admin@yourdomain.com --temporary-password TempPass123!
+**Expected Output:**
+```
+🚀 Deploying Cognito-Integrated Frontend...
+✅ API URL: https://abc123.execute-api.us-east-1.amazonaws.com/prod/
+✅ User Pool: us-east-1_ABC123
+✅ Region: us-east-1
+📦 Installing dependencies...
+🔨 Building React app...
+☁️ Uploading to S3...
+🔄 Invalidating CloudFront cache...
+
+✅ Deployment complete!
+
+🌐 Frontend URL: https://d1234567890.cloudfront.net
+
+📝 To create a test user:
+   aws cognito-idp sign-up --client-id abc123 --username test@example.com --password Test123!
+   aws cognito-idp admin-confirm-user --user-pool-id us-east-1_ABC123 --username test@example.com
 ```
 
-### 3. Test the System
+---
+
+## Step 4: Create Test User
 
 ```bash
-# Get API Gateway URL
-API_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-API --query 'Stacks[0].Outputs[?OutputKey==`ApiGatewayUrl`].OutputValue' --output text)
+# Get Cognito IDs
+USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text)
+USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text)
 
+# Sign up user
+aws cognito-idp sign-up \
+  --client-id $USER_POOL_CLIENT_ID \
+  --username test@example.com \
+  --password Test123!
+
+# Confirm user (skip email verification)
+aws cognito-idp admin-confirm-user \
+  --user-pool-id $USER_POOL_ID \
+  --username test@example.com
+```
+
+**Expected Output:**
+```json
+{
+    "UserConfirmed": false,
+    "UserSub": "12345678-1234-1234-1234-123456789012"
+}
+```
+
+---
+
+## Step 5: Access Frontend
+
+```bash
 # Get CloudFront URL
-CLOUDFRONT_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDomainName`].OutputValue' --output text)
+CLOUDFRONT_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue' --output text)
+FRONTEND_URL=$(aws cloudfront get-distribution --id $CLOUDFRONT_ID --query 'Distribution.DomainName' --output text)
 
-echo "Frontend URL: https://$CLOUDFRONT_URL"
-echo "API URL: $API_URL"
+echo "Frontend: https://$FRONTEND_URL"
 ```
 
-## Environment-Specific Deployments
+**Login Credentials:**
+- Email: `test@example.com`
+- Password: `Test123!`
 
-### Development Environment
+---
 
+## Frontend Features
+
+### Authentication
+- Sign up with email
+- Sign in with email/password
+- Auto-verify email (no verification code needed)
+- Secure JWT token management
+- Auto-refresh tokens
+
+### Watchlist Management
+- Add molecules to personal watchlist
+- Remove molecules from watchlist
+- View all molecules in watchlist
+- Per-user isolation (userId from Cognito)
+
+### Insights Dashboard
+- View AI-generated insights
+- Filter by molecule
+- Sort by timestamp
+- Real-time updates
+
+---
+
+## Architecture
+
+```
+User → CloudFront (HTTPS)
+         ↓
+    S3 (React App)
+         ↓
+    Cognito (Authentication)
+         ↓
+    API Gateway (Cognito Authorizer)
+         ↓
+    Lambda (Watchlist/Insights API)
+         ↓
+    DynamoDB (User Data)
+```
+
+---
+
+## API Endpoints (Protected)
+
+All endpoints require `Authorization` header with Cognito JWT token.
+
+### GET /insights
+Returns insights for all molecules.
+
+**Request:**
 ```bash
-# Deploy with development settings
-cdk deploy --all --context environment=dev
+curl https://API_URL/insights \
+  -H "Authorization: JWT_TOKEN"
 ```
 
-### Production Environment
+**Response:**
+```json
+{
+  "insights": [
+    {
+      "molecule": "Keytruda",
+      "timestamp": "2024-01-15T10:30:00Z",
+      "summary": "FDA approval for new indication...",
+      "impact": "high"
+    }
+  ]
+}
+```
 
+### GET /watchlist?userId=USER_ID
+Returns user's watchlist.
+
+**Request:**
 ```bash
-# Deploy with production settings
-cdk deploy --all --context environment=prod
+curl "https://API_URL/watchlist?userId=test@example.com" \
+  -H "Authorization: JWT_TOKEN"
 ```
+
+**Response:**
+```json
+{
+  "watchlist": ["Keytruda", "Opdivo", "Tecentriq"]
+}
+```
+
+### POST /watchlist
+Adds molecule to watchlist.
+
+**Request:**
+```bash
+curl -X POST https://API_URL/watchlist \
+  -H "Authorization: JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"userId":"test@example.com","molecule":"Keytruda"}'
+```
+
+**Response:**
+```json
+{
+  "message": "Added to watchlist"
+}
+```
+
+### DELETE /watchlist?userId=USER_ID&molecule=MOLECULE
+Removes molecule from watchlist.
+
+**Request:**
+```bash
+curl -X DELETE "https://API_URL/watchlist?userId=test@example.com&molecule=Keytruda" \
+  -H "Authorization: JWT_TOKEN"
+```
+
+**Response:**
+```json
+{
+  "message": "Removed from watchlist"
+}
+```
+
+---
 
 ## Troubleshooting
 
-### Common Issues
+### Issue: Frontend shows 401 Unauthorized
 
-#### 1. CDK Bootstrap Issues
+**Cause:** User not confirmed or token expired.
+
+**Fix:**
 ```bash
-# If bootstrap fails, try with explicit account/region
-cdk bootstrap aws://ACCOUNT-ID/REGION
+# Confirm user
+aws cognito-idp admin-confirm-user \
+  --user-pool-id $USER_POOL_ID \
+  --username test@example.com
+
+# Or sign out and sign in again
 ```
 
-#### 2. Lambda Deployment Timeouts
+### Issue: Frontend not loading
+
+**Cause:** CloudFront cache not invalidated.
+
+**Fix:**
 ```bash
-# Increase timeout in CDK stack
-# Check VPC configuration and endpoints
+CLOUDFRONT_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue' --output text)
+aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_ID --paths "/*"
 ```
 
-#### 3. ECS Service Won't Start
-```bash
-# Check ECS service logs
-aws logs describe-log-groups --log-group-name-prefix /ecs/ci-alert
+### Issue: API returns 403 Forbidden
 
-# Check task definition
-aws ecs describe-task-definition --task-definition ci-alert-task
+**Cause:** Cognito authorizer rejecting token.
+
+**Fix:**
+1. Check token is valid (not expired)
+2. Ensure user is confirmed
+3. Verify User Pool ID matches in frontend `.env`
+
+### Issue: Bootstrap fails
+
+**Cause:** CloudFormation hooks in us-west-2.
+
+**Fix:**
+```bash
+export AWS_REGION=us-east-1
+aws configure set region us-east-1
+cd infrastructure
+cdk bootstrap
 ```
 
-#### 4. Bedrock Access Issues
-```bash
-# Ensure Bedrock models are enabled in your region
-aws bedrock list-foundation-models --region $AWS_REGION
-```
+---
 
-### Debugging Commands
+## Cost Breakdown
 
-```bash
-# Check stack status
-aws cloudformation describe-stacks --stack-name CIAlert-Compute
+### Monthly Costs (Light Usage)
+- **DynamoDB**: $1-5 (On-Demand, 1M reads/writes)
+- **Lambda**: $0-2 (Free tier: 1M requests)
+- **API Gateway**: $3.50 (1M requests)
+- **S3**: $0.50 (10GB storage)
+- **CloudFront**: $1 (10GB transfer)
+- **Cognito**: Free (50,000 MAU)
+- **CloudWatch**: $3 (10 metrics, 10 alarms)
+- **SQS**: Free (1M requests)
+- **EventBridge**: Free (1M events)
 
-# View Lambda logs
-aws logs tail /aws/lambda/ci-alert-processor --follow
+**Total: ~$10-15/month**
 
-# Check SQS queue
-aws sqs get-queue-attributes --queue-url QUEUE_URL --attribute-names All
+---
 
-# Monitor DynamoDB
-aws dynamodb scan --table-name ci-alert-insights --limit 5
-```
+## Security Features
+
+✅ **Authentication**: Cognito with email sign-in
+✅ **Authorization**: JWT tokens on all API endpoints
+✅ **Encryption**: S3 and DynamoDB encrypted at rest
+✅ **HTTPS**: CloudFront with TLS 1.2+
+✅ **CORS**: Restricted to CloudFront origin
+✅ **IAM**: Least privilege Lambda roles
+✅ **Password Policy**: 8+ chars, uppercase, lowercase, number, symbol
+
+---
 
 ## Cleanup
 
-### Remove All Resources
-
 ```bash
-# Delete CDK stacks (in reverse order)
-cdk destroy --all --force
+# Delete all stacks
+cd infrastructure
+cdk destroy --all
 
-# Delete ECR images
-aws ecr batch-delete-image --repository-name ci-alert-frontend --image-ids imageTag=latest
+# Or manually
+aws cloudformation delete-stack --stack-name CIAlert-CICD
+aws cloudformation delete-stack --stack-name CIAlert-Monitoring
+aws cloudformation delete-stack --stack-name CIAlert-Frontend
+aws cloudformation delete-stack --stack-name CIAlertStack
 
-# Delete CloudWatch dashboard
-aws cloudwatch delete-dashboards --dashboard-names CI-Alert-System
+# Wait for completion
+aws cloudformation wait stack-delete-complete --stack-name CIAlertStack
 
-# Delete Bedrock Agent (manual cleanup required)
-# Use AWS Console to delete agent and knowledge base
+# Delete Cognito users (optional)
+aws cognito-idp delete-user-pool --user-pool-id $USER_POOL_ID
 ```
 
-## Cost Optimization
+---
 
-### Estimated Monthly Costs (1000 users)
-- **Compute**: $200 (Lambda + ECS)
-- **Storage**: $50 (DynamoDB + S3)
-- **AI/ML**: $300 (Bedrock usage)
-- **Networking**: $100 (CloudFront + VPC Endpoints)
-- **Total**: ~$650/month
+## Next Steps
 
-### Cost Reduction Tips
-1. Use VPC Endpoints instead of NAT Gateway (-$90/month)
-2. Enable S3 Intelligent Tiering
-3. Use DynamoDB On-Demand pricing
-4. Implement Lambda ARM64 for better price/performance
-5. Use Spot instances for non-critical workloads
+1. **Add More Users**: Use Cognito console or CLI
+2. **Configure Email Alerts**: Set up SES for daily digests
+3. **Add Data Sources**: Integrate FDA, EMA, WIPO APIs
+4. **Custom Domain**: Add Route53 and ACM certificate
+5. **Monitoring**: Set up CloudWatch alarms and SNS notifications
+6. **CI/CD**: Configure GitHub webhooks for auto-deploy
 
-## Security Considerations
-
-### Network Security
-- All compute resources in private subnets
-- VPC Endpoints for AWS service communication
-- WAF protection on CloudFront
-- Security groups with least privilege
-
-### Data Security
-- Encryption at rest for all storage
-- Encryption in transit (HTTPS/TLS)
-- IAM roles with least privilege
-- Cognito for user authentication
-
-### Monitoring Security
-- CloudTrail for API logging
-- GuardDuty for threat detection
-- Config for compliance monitoring
-
-## Maintenance
-
-### Regular Tasks
-1. **Weekly**: Review CloudWatch alarms and metrics
-2. **Monthly**: Update Lambda dependencies
-3. **Quarterly**: Review and rotate access keys
-4. **Annually**: Review architecture and costs
-
-### Updates
-```bash
-# Update CDK
-npm update -g aws-cdk
-
-# Update Lambda dependencies
-cd lambdas
-pip install --upgrade -r requirements.txt
-
-# Update frontend dependencies
-cd frontend
-npm update
-
-# Redeploy
-./deploy.sh
-```
+---
 
 ## Support
 
-### Documentation
-- [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/)
-- [AWS Bedrock Documentation](https://docs.aws.amazon.com/bedrock/)
-- [React Documentation](https://reactjs.org/docs/)
-
-### Monitoring
-- CloudWatch Dashboard: `CI-Alert-System`
-- X-Ray Tracing: Enabled for all Lambda functions
-- Cost Explorer: Monitor spending trends
-
-### Logs
-- Lambda logs: `/aws/lambda/ci-alert-*`
-- ECS logs: `/ecs/ci-alert-frontend`
-- API Gateway logs: Enabled with request/response logging
+- **Quick Start**: See `QUICKSTART.md`
+- **Cognito Setup**: See `COGNITO_SETUP.md`
+- **Architecture**: See `README.md`
+- **Healthcare Context**: See `USA_HEALTHCARE_COMPETITIVE_INTELLIGENCE.md`
