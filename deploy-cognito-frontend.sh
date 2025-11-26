@@ -33,13 +33,22 @@ npm run build
 echo "☁️ Uploading to S3..."
 aws s3 sync build/ s3://$BUCKET/ --delete
 
-echo "🔄 Invalidating CloudFront cache..."
-aws cloudfront create-invalidation --distribution-id $CLOUDFRONT --paths "/*"
+if [ -n "$CLOUDFRONT" ]; then
+  echo "🔄 Invalidating CloudFront cache..."
+  aws cloudfront create-invalidation --distribution-id $CLOUDFRONT --paths "/*"
+else
+  echo "⚠️  CloudFront distribution ID not found, skipping cache invalidation"
+fi
 
 echo ""
 echo "✅ Deployment complete!"
 echo ""
-echo "🌐 Frontend URL: https://$(aws cloudfront get-distribution --id $CLOUDFRONT --query 'Distribution.DomainName' --output text)"
+if [ -n "$CLOUDFRONT" ]; then
+  FRONTEND_URL=$(aws cloudfront get-distribution --id $CLOUDFRONT --query 'Distribution.DomainName' --output text)
+  echo "🌐 Frontend URL: https://$FRONTEND_URL"
+else
+  echo "🌐 Frontend URL: http://$BUCKET.s3-website-$REGION.amazonaws.com"
+fi
 echo ""
 echo "📝 To create a test user:"
 echo "   aws cognito-idp sign-up --client-id $USER_POOL_CLIENT_ID --username test@example.com --password Test123!"

@@ -38,7 +38,7 @@ function App() {
       loadWatchlist();
       loadInsights();
     }
-  }, [user]);
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const checkUser = async () => {
     try {

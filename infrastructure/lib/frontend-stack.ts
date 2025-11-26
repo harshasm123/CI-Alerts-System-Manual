@@ -70,5 +70,10 @@ export class FrontendStack extends cdk.Stack {
       value: websiteBucket.bucketName,
       description: 'S3 Bucket Name',
     });
+
+    new cdk.CfnOutput(this, 'DistributionId', {
+      value: distribution.distributionId,
+      description: 'CloudFront Distribution ID',
+    });
   }
 }
