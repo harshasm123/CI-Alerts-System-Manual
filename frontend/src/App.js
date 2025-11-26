@@ -135,12 +135,17 @@ function App() {
   const loadSettings = async () => {
     try {
       const token = await getAuthToken();
-      const res = await fetch(`${API_URL}user-settings?userId=${user.username}`, {
+      const res = await fetch(`${API_URL}user-settings`, {
         headers: { Authorization: token }
       });
       if (res.ok) {
         const data = await res.json();
-        setSettings(prev => ({ ...prev, ...data.settings }));
+        setSettings({
+          emailFrequency: 'daily',
+          notificationEmail: data.email || user.username,
+          enableAlerts: data.preferences?.email_enabled ?? true,
+          alertThreshold: data.preferences?.min_relevance >= 0.8 ? 'high' : data.preferences?.min_relevance >= 0.5 ? 'medium' : 'all'
+        });
       }
     } catch (err) {
       console.error('Load settings error:', err);
@@ -150,17 +155,32 @@ function App() {
   const saveSettings = async () => {
     try {
       const token = await getAuthToken();
+      const payload = {
+        email: settings.notificationEmail || user.username,
+        preferences: {
+          email_enabled: settings.enableAlerts,
+          min_relevance: settings.alertThreshold === 'high' ? 0.8 : settings.alertThreshold === 'medium' ? 0.5 : 0.3,
+          sources: ['PubMed', 'ClinicalTrials.gov', 'FDA', 'EMA', 'WIPO'],
+          impact_levels: ['HIGH', 'MEDIUM', 'LOW']
+        }
+      };
+      
       const res = await fetch(`${API_URL}user-settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: token },
-        body: JSON.stringify({ userId: user.username, settings })
+        body: JSON.stringify(payload)
       });
+      
       if (res.ok) {
-        setError('Settings saved successfully!');
+        setError('✅ Settings saved successfully!');
         setTimeout(() => setError(''), 3000);
+      } else {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to save');
       }
     } catch (err) {
-      setError('Failed to save settings');
+      console.error('Save settings error:', err);
+      setError('❌ ' + (err.message || 'Failed to save settings'));
     }
   };
 
