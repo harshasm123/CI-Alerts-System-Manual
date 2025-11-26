@@ -133,7 +133,7 @@ A production-grade AWS-based system that automatically ingests global drug/molec
 
 ## 🚀 Quick Deploy
 
-```bash
+1```bash
 ./prereq.sh      # Install prerequisites
 ./deploy.sh      # Deploy all 4 stacks
 ./GET_URLS.sh    # Get deployed URLs

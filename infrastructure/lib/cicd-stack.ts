@@ -1,15 +1,27 @@
 import * as cdk from 'aws-cdk-lib';
-import * as codecommit from 'aws-cdk-lib/aws-codecommit';
 import * as codebuild from 'aws-cdk-lib/aws-codebuild';
 import * as codepipeline from 'aws-cdk-lib/aws-codepipeline';
 import * as codepipeline_actions from 'aws-cdk-lib/aws-codepipeline-actions';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
+interface CICDStackProps extends cdk.StackProps {
+  githubRepo?: string;
+  githubOwner?: string;
+  githubBranch?: string;
+  stackName: string;
+}
+
 export class CICDStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: CICDStackProps) {
     super(scope, id, props);
+
+    const githubOwner = props.githubOwner || 'harshasm123';
+    const githubRepo = props.githubRepo || 'CI-Alerts-System-Manual';
+    const githubBranch = props.githubBranch || 'main';
+    const targetStackName = props.stackName;
 
     // Artifact Bucket
     const artifactBucket = new s3.Bucket(this, 'ArtifactBucket', {
@@ -19,11 +31,12 @@ export class CICDStack extends cdk.Stack {
       autoDeleteObjects: true,
     });
 
-    // CodeCommit Repository
-    const repository = new codecommit.Repository(this, 'Repository', {
-      repositoryName: 'ci-alert-system',
-      description: 'CI Alert System Source Code',
-    });
+    // GitHub Token from Secrets Manager (create manually)
+    const githubToken = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      'GitHubToken',
+      'github-token'
+    );
 
     // CodeBuild Project for Infrastructure
     const infraBuildProject = new codebuild.PipelineProject(this, 'InfraBuild', {
@@ -134,7 +147,7 @@ export class CICDStack extends cdk.Stack {
       resources: ['*'],
     }));
 
-    // Pipeline
+    // Pipeline with GitHub source
     const sourceOutput = new codepipeline.Artifact();
     const infraBuildOutput = new codepipeline.Artifact('InfraBuildOutput');
     const lambdaBuildOutput = new codepipeline.Artifact('LambdaBuildOutput');
@@ -146,11 +159,13 @@ export class CICDStack extends cdk.Stack {
         {
           stageName: 'Source',
           actions: [
-            new codepipeline_actions.CodeCommitSourceAction({
-              actionName: 'CodeCommit',
-              repository,
+            new codepipeline_actions.GitHubSourceAction({
+              actionName: 'GitHub',
+              owner: githubOwner,
+              repo: githubRepo,
+              branch: githubBranch,
+              oauthToken: githubToken.secretValue,
               output: sourceOutput,
-              branch: 'main',
             }),
           ],
         },
@@ -181,8 +196,8 @@ export class CICDStack extends cdk.Stack {
           actions: [
             new codepipeline_actions.CloudFormationCreateUpdateStackAction({
               actionName: 'DeployInfrastructure',
-              stackName: 'CIAlertStack',
-              templatePath: infraBuildOutput.atPath('CIAlertStack.template.json'),
+              stackName: targetStackName,
+              templatePath: infraBuildOutput.atPath(`${targetStackName}.template.json`),
               adminPermissions: true,
             }),
           ],
@@ -191,9 +206,9 @@ export class CICDStack extends cdk.Stack {
     });
 
     // Outputs
-    new cdk.CfnOutput(this, 'RepositoryCloneUrl', {
-      value: repository.repositoryCloneUrlHttp,
-      description: 'CodeCommit Repository Clone URL',
+    new cdk.CfnOutput(this, 'GitHubRepository', {
+      value: `https://github.com/${githubOwner}/${githubRepo}`,
+      description: 'GitHub Repository URL',
     });
 
     new cdk.CfnOutput(this, 'PipelineUrl', {
@@ -204,6 +219,16 @@ export class CICDStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ArtifactBucketName', {
       value: artifactBucket.bucketName,
       description: 'Pipeline Artifact Bucket',
+    });
+
+    new cdk.CfnOutput(this, 'SetupInstructions', {
+      value: 'Create GitHub token in Secrets Manager: aws secretsmanager create-secret --name github-token --secret-string YOUR_GITHUB_TOKEN',
+      description: 'Setup Instructions',
+    });
+
+    new cdk.CfnOutput(this, 'DeploymentTarget', {
+      value: targetStackName,
+      description: 'Target stack for deployment',
     });
   }
 }

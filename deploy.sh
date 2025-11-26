@@ -119,7 +119,42 @@ else
     echo "  ℹ️  CDK already bootstrapped, skipping"
 fi
 
-# Step 3: Install dependencies
+# Step 3: Setup GitHub token for CICD stack
+echo "🔑 Checking GitHub token for CICD..."
+if ! aws secretsmanager describe-secret --secret-id github-token --region $REGION &>/dev/null; then
+    echo "⚠️  GitHub token not found in Secrets Manager"
+    echo "   CICD stack requires GitHub personal access token"
+    echo ""
+    read -p "Do you have a GitHub personal access token? (y/n): " has_token
+    
+    if [[ "$has_token" =~ ^[Yy]$ ]]; then
+        echo ""
+        echo "Get token from: https://github.com/settings/tokens"
+        echo "Required scopes: repo, admin:repo_hook"
+        echo ""
+        read -sp "Enter GitHub token: " github_token
+        echo ""
+        
+        aws secretsmanager create-secret \
+            --name github-token \
+            --secret-string "$github_token" \
+            --region $REGION
+        
+        echo "✅ GitHub token stored in Secrets Manager"
+    else
+        echo ""
+        echo "⚠️  Skipping CICD stack deployment (no GitHub token)"
+        echo "   To deploy later:"
+        echo "   1. Create token: https://github.com/settings/tokens"
+        echo "   2. Store: aws secretsmanager create-secret --name github-token --secret-string TOKEN --region $REGION"
+        echo "   3. Deploy: cd infrastructure && cdk deploy CIAlert-CICD"
+        SKIP_CICD=true
+    fi
+else
+    echo "✅ GitHub token found in Secrets Manager"
+fi
+
+# Step 4: Install dependencies
 echo "📦 Installing dependencies..."
 
 # Infrastructure dependencies
@@ -127,20 +162,26 @@ cd infrastructure
 npm install
 cd ..
 
-# Step 4: Build and deploy infrastructure
+# Step 5: Build and deploy infrastructure
 echo "🏗️  Building and deploying infrastructure..."
 cd infrastructure
 npm run build
-echo "📦 Deploying all stacks..."
-cdk deploy --all --require-approval never
+
+if [ "$SKIP_CICD" = true ]; then
+    echo "📦 Deploying 3 stacks (skipping CICD)..."
+    cdk deploy CIAlertStack CIAlert-Frontend CIAlert-Monitoring --require-approval never
+else
+    echo "📦 Deploying all 4 stacks..."
+    cdk deploy --all --require-approval never
+fi
 cd ..
 
-# Step 5: Get stack outputs
+# Step 6: Get stack outputs
 echo "📋 Getting stack outputs..."
 API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text 2>/dev/null || echo "")
 USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null || echo "")
 
-# Step 6: Test deployment
+# Step 7: Test deployment
 echo "🧪 Testing deployment..."
 if [ -n "$API_URL" ]; then
     echo "Testing API endpoint: $API_URL"
@@ -153,9 +194,13 @@ echo "====================="
 echo ""
 echo "📊 Deployed Stacks:"
 echo "  ✓ CIAlertStack (Core: DynamoDB, Lambda, API Gateway, Cognito)"
-echo "  ✓ CIAlert-Frontend (ECS, CloudFront, ALB, WAF)"
+echo "  ✓ CIAlert-Frontend (S3 Static Website + CloudFront)"
 echo "  ✓ CIAlert-Monitoring (CloudWatch, Alarms, SNS)"
-echo "  ✓ CIAlert-CICD (CodePipeline, CodeBuild, CodeCommit)"
+if [ "$SKIP_CICD" = true ]; then
+    echo "  ✗ CIAlert-CICD (Skipped - no GitHub token)"
+else
+    echo "  ✓ CIAlert-CICD (GitHub + CodePipeline)"
+fi
 echo ""
 echo "📋 Stack Outputs:"
 echo "  Region: $REGION"
@@ -180,7 +225,15 @@ echo ""
 echo "📝 Next Steps:"
 echo "1. View all URLs: ./GET_URLS.sh"
 echo "2. Enable Bedrock models: AWS Console → Bedrock → Model Access"
-echo "3. Test API endpoints using commands above"
-echo "4. Check CloudWatch Dashboard for monitoring"
+if [ "$SKIP_CICD" = true ]; then
+    echo "3. Setup GitHub token to deploy CICD: aws secretsmanager create-secret --name github-token --secret-string YOUR_TOKEN --region $REGION"
+    echo "4. Deploy CICD: cd infrastructure && cdk deploy CIAlert-CICD"
+fi
+echo "$([ "$SKIP_CICD" = true ] && echo "5" || echo "3"). Test API endpoints using commands above"
+echo "$([ "$SKIP_CICD" = true ] && echo "6" || echo "4"). Check CloudWatch Dashboard for monitoring"
 echo ""
-echo "✅ All 4 stacks deployed successfully!"
+if [ "$SKIP_CICD" = true ]; then
+    echo "✅ 3 stacks deployed successfully (CICD skipped)!"
+else
+    echo "✅ All 4 stacks deployed successfully!"
+fi

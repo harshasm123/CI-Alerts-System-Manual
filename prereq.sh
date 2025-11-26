@@ -87,7 +87,23 @@ done
 
 # Verify AWS access
 echo "🔍 Verifying AWS access..."
-aws sts get-caller-identity
+if aws sts get-caller-identity &>/dev/null; then
+    echo "✅ AWS credentials valid"
+    aws sts get-caller-identity
+else
+    echo "❌ AWS credentials invalid or not configured"
+    echo "   Please reconfigure your credentials:"
+    echo ""
+    aws configure
+    echo ""
+    echo "Verifying again..."
+    if aws sts get-caller-identity; then
+        echo "✅ AWS credentials now valid"
+    else
+        echo "❌ Still invalid. Check your Access Key ID and Secret Access Key"
+        exit 1
+    fi
+fi
 
 echo "⚠️  IMPORTANT: Enable Bedrock models manually"
 echo "   1. Go to AWS Console > Bedrock > Model Access"

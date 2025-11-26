@@ -11,6 +11,10 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Construct } from 'constructs';
 
 export class CIAlertStack extends cdk.Stack {
+  public readonly apiUrl: string;
+  public readonly userPoolId: string;
+  public readonly apiName: string;
+
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
@@ -169,25 +173,34 @@ export class CIAlertStack extends cdk.Stack {
     });
     dailyRule.addTarget(new targets.LambdaFunction(pubmedFunction));
 
+    // Export values for other stacks
+    this.apiUrl = api.url;
+    this.userPoolId = userPool.userPoolId;
+    this.apiName = api.restApiName;
+
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
       value: api.url,
       description: 'API Gateway URL',
+      exportName: `${this.stackName}-ApiUrl`,
     });
 
     new cdk.CfnOutput(this, 'UserPoolId', {
       value: userPool.userPoolId,
       description: 'Cognito User Pool ID',
+      exportName: `${this.stackName}-UserPoolId`,
     });
 
     new cdk.CfnOutput(this, 'UserPoolClientId', {
       value: userPoolClient.userPoolClientId,
       description: 'Cognito User Pool Client ID',
+      exportName: `${this.stackName}-UserPoolClientId`,
     });
 
     new cdk.CfnOutput(this, 'DataBucketName', {
       value: dataBucket.bucketName,
       description: 'S3 Data Bucket Name',
+      exportName: `${this.stackName}-DataBucketName`,
     });
   }
 }
