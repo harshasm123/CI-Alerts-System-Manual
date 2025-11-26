@@ -10,7 +10,19 @@ REGION=$(aws configure get region)
 if [ -z "$REGION" ]; then
     echo "⚠️  No region configured in AWS CLI. Using us-east-1 as default."
     REGION="us-east-1"
+    aws configure set region us-east-1
 fi
+
+# Check for CloudFormation hook issues in us-west-2
+if [ "$REGION" = "us-west-2" ]; then
+    echo "⚠️  WARNING: us-west-2 has CloudFormation hooks that block CDK bootstrap"
+    echo "   AWS::EarlyValidation::ResourceExistenceCheck prevents CDKToolkit creation"
+    echo "   Switching to us-east-1..."
+    REGION="us-east-1"
+    aws configure set region us-east-1
+    echo "✅ Region changed to us-east-1"
+fi
+
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 DATA_BUCKET="ci-alert-data-${ACCOUNT_ID}-${REGION}"
 
@@ -44,11 +56,29 @@ fi
 
 echo "✅ Prerequisites check complete"
 
-# Step 1: Bootstrap CDK (if needed)
-echo "🏗️  Bootstrapping CDK..."
-cdk bootstrap aws://${ACCOUNT_ID}/${REGION} || echo "CDK already bootstrapped"
+# Step 1: Clean up failed CDKToolkit stack if exists
+echo "🧹 Checking for failed CDKToolkit stack..."
+STACK_STATUS=$(aws cloudformation describe-stacks --stack-name CDKToolkit --region $REGION --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "NONE")
 
-# Step 2: Install dependencies
+if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "REVIEW_IN_PROGRESS" ]; then
+    echo "  Found failed stack in $STACK_STATUS state. Deleting..."
+    aws cloudformation delete-stack --stack-name CDKToolkit --region $REGION
+    echo "  Waiting for deletion..."
+    aws cloudformation wait stack-delete-complete --stack-name CDKToolkit --region $REGION 2>/dev/null || true
+    echo "  ✅ Cleanup complete"
+fi
+
+# Step 2: Bootstrap CDK (if needed)
+echo "🏗️  Bootstrapping CDK in $REGION..."
+cdk bootstrap aws://${ACCOUNT_ID}/${REGION} || {
+    echo "❌ CDK bootstrap failed"
+    echo "   If you see AWS::EarlyValidation::ResourceExistenceCheck errors:"
+    echo "   1. Contact your AWS administrator to disable the CloudFormation hook"
+    echo "   2. Or use a different region: aws configure set region us-east-1"
+    exit 1
+}
+
+# Step 3: Install dependencies
 echo "📦 Installing dependencies..."
 
 # Infrastructure dependencies
@@ -56,19 +86,19 @@ cd infrastructure
 npm install
 cd ..
 
-# Step 3: Build and deploy infrastructure
+# Step 4: Build and deploy infrastructure
 echo "🏗️  Building and deploying infrastructure..."
 cd infrastructure
 npm run build
 cdk deploy --require-approval never
 cd ..
 
-# Step 4: Get stack outputs
+# Step 5: Get stack outputs
 echo "📋 Getting stack outputs..."
 API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text 2>/dev/null || echo "")
 USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null || echo "")
 
-# Step 5: Test deployment
+# Step 6: Test deployment
 echo "🧪 Testing deployment..."
 if [ -n "$API_URL" ]; then
     echo "Testing API endpoint: $API_URL"

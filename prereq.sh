@@ -71,6 +71,17 @@ else
     fi
 fi
 
+# Check and fix region for CloudFormation hook issues
+CURRENT_REGION=$(aws configure get region)
+echo "🌍 Current region: $CURRENT_REGION"
+
+if [ "$CURRENT_REGION" = "us-west-2" ]; then
+    echo "⚠️  WARNING: us-west-2 has CloudFormation hooks that block CDK bootstrap"
+    echo "   Switching to us-east-1 to avoid AWS::EarlyValidation::ResourceExistenceCheck"
+    aws configure set region us-east-1
+    echo "✅ Region changed to us-east-1"
+fi
+
 # Verify AWS access
 echo "🔍 Verifying AWS access..."
 aws sts get-caller-identity
