@@ -74,6 +74,8 @@ export class CIAlertStack extends cdk.Stack {
         userPassword: true,
         userSrp: true,
       },
+      generateSecret: false,
+      preventUserExistenceErrors: true,
     });
 
     // Lambda Execution Role

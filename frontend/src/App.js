@@ -13,7 +13,6 @@ Amplify.configure({
     Cognito: {
       userPoolId: USER_POOL_ID,
       userPoolClientId: USER_POOL_CLIENT_ID,
-      region: REGION,
     }
   }
 });
@@ -67,8 +66,15 @@ function App() {
     setError('');
     setLoading(true);
     try {
-      await signUp({ username: email, password, options: { userAttributes: { email } } });
-      setError('Sign up successful! Check your email for verification code, then sign in.');
+      await signUp({ 
+        username: email, 
+        password, 
+        options: { 
+          userAttributes: { email },
+          autoSignIn: false
+        } 
+      });
+      setError('Sign up successful! Your account is auto-verified. Please sign in.');
       setIsSignUp(false);
     } catch (err) {
       setError(err.message);
