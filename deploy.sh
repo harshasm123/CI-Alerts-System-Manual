@@ -90,7 +90,8 @@ cd ..
 echo "🏗️  Building and deploying infrastructure..."
 cd infrastructure
 npm run build
-cdk deploy --require-approval never
+echo "📦 Deploying all stacks..."
+cdk deploy --all --require-approval never
 cd ..
 
 # Step 5: Get stack outputs
