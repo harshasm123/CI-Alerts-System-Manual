@@ -1,19 +1,32 @@
 #!/bin/bash
 
-# Trigger manual ingestion for testing
-echo "🔍 Triggering manual ingestion..."
+echo "🔍 Finding Insights table..."
 
-# Get DynamoDB table name
-INSIGHTS_TABLE=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`InsightsTableName`].OutputValue' --output text)
+# Try multiple ways to find the table
+INSIGHTS_TABLE=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`InsightsTableName`].OutputValue' --output text 2>/dev/null)
 
 if [ -z "$INSIGHTS_TABLE" ]; then
-    echo "❌ Insights table not found"
-    exit 1
+    echo "Trying alternative output key..."
+    INSIGHTS_TABLE=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?contains(OutputKey, `Insights`)].OutputValue' --output text 2>/dev/null | head -1)
 fi
 
-echo "📝 Creating sample insights in $INSIGHTS_TABLE..."
+if [ -z "$INSIGHTS_TABLE" ]; then
+    echo "Searching DynamoDB tables..."
+    INSIGHTS_TABLE=$(aws dynamodb list-tables --query "TableNames[?contains(@, 'Insights') || contains(@, 'insights')]" --output text | head -1)
+fi
 
-TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+if [ -z "$INSIGHTS_TABLE" ]; then
+    echo "❌ Insights table not found. Listing all tables:"
+    aws dynamodb list-tables --query "TableNames" --output table
+    echo ""
+    echo "Please enter the Insights table name manually:"
+    read INSIGHTS_TABLE
+fi
+
+echo "📝 Using table: $INSIGHTS_TABLE"
+echo "Creating sample insights..."
+
+TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Sample insight 1
 aws dynamodb put-item --table-name "$INSIGHTS_TABLE" --item '{
@@ -24,7 +37,7 @@ aws dynamodb put-item --table-name "$INSIGHTS_TABLE" --item '{
     "source": {"S": "FDA"},
     "impact_level": {"S": "HIGH"},
     "relevance_score": {"N": "0.95"}
-}'
+}' && echo "✅ Insight 1 created"
 
 # Sample insight 2
 aws dynamodb put-item --table-name "$INSIGHTS_TABLE" --item '{
@@ -35,7 +48,7 @@ aws dynamodb put-item --table-name "$INSIGHTS_TABLE" --item '{
     "source": {"S": "ClinicalTrials.gov"},
     "impact_level": {"S": "MEDIUM"},
     "relevance_score": {"N": "0.78"}
-}'
+}' && echo "✅ Insight 2 created"
 
 # Sample insight 3
 aws dynamodb put-item --table-name "$INSIGHTS_TABLE" --item '{
@@ -46,7 +59,8 @@ aws dynamodb put-item --table-name "$INSIGHTS_TABLE" --item '{
     "source": {"S": "EMA"},
     "impact_level": {"S": "HIGH"},
     "relevance_score": {"N": "0.89"}
-}'
+}' && echo "✅ Insight 3 created"
 
-echo "✅ Sample insights created!"
+echo ""
+echo "✅ All sample insights created!"
 echo "🔄 Refresh your browser to see insights"
