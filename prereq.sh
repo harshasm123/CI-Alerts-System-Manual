@@ -75,13 +75,13 @@ fi
 echo "🔍 Verifying AWS access..."
 aws sts get-caller-identity
 
-# Enable Bedrock models
-echo "🤖 Enabling Bedrock models..."
-aws bedrock put-model-invocation-logging-configuration --logging-config '{}'
-echo "⚠️  Please enable Claude 3 Sonnet and Titan Embeddings in AWS Console > Bedrock > Model Access"
+echo "⚠️  IMPORTANT: Enable Bedrock models manually"
+echo "   1. Go to AWS Console > Bedrock > Model Access"
+echo "   2. Request access to: Claude 3 Sonnet and Titan Embeddings"
+echo "   3. Wait for approval (usually instant for standard models)"
 
 echo "✅ Prerequisites setup complete!"
 echo ""
 echo "Next steps:"
-echo "1. Enable Bedrock models in AWS Console"
+echo "1. Enable Bedrock models: https://console.aws.amazon.com/bedrock/home#/modelaccess"
 echo "2. Run: ./deploy.sh"
