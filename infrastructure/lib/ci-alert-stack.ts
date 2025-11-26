@@ -11,10 +11,6 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import { Construct } from 'constructs';
 
 export class CIAlertStack extends cdk.Stack {
-  public readonly apiUrl: string;
-  public readonly userPoolId: string;
-  public readonly apiName: string;
-
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
@@ -173,12 +169,7 @@ export class CIAlertStack extends cdk.Stack {
     });
     dailyRule.addTarget(new targets.LambdaFunction(pubmedFunction));
 
-    // Export values for other stacks
-    this.apiUrl = api.url;
-    this.userPoolId = userPool.userPoolId;
-    this.apiName = api.restApiName;
-
-    // Outputs (no exports to avoid dependency locks)
+    // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
       value: api.url,
       description: 'API Gateway URL',

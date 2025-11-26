@@ -6,16 +6,16 @@ import * as actions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import { Construct } from 'constructs';
 
 interface MonitoringStackProps extends cdk.StackProps {
-  apiName: string;
+  apiName?: string;
   alertEmail?: string;
 }
 
 export class MonitoringStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props: MonitoringStackProps) {
+  constructor(scope: Construct, id: string, props?: MonitoringStackProps) {
     super(scope, id, props);
 
-    const apiName = props.apiName;
-    const alertEmail = props.alertEmail || 'alerts@example.com';
+    const apiName = props?.apiName || 'CI Alert API';
+    const alertEmail = props?.alertEmail || 'alerts@example.com';
 
     // SNS Topic for Alerts
     const alertTopic = new sns.Topic(this, 'AlertTopic', {
@@ -162,11 +162,6 @@ export class MonitoringStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'AlertTopicArn', {
       value: alertTopic.topicArn,
       description: 'SNS Alert Topic ARN',
-    });
-
-    new cdk.CfnOutput(this, 'MonitoredApiName', {
-      value: apiName,
-      description: 'API being monitored',
     });
   }
 }

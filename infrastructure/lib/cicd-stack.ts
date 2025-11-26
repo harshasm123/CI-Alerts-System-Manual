@@ -11,17 +11,17 @@ interface CICDStackProps extends cdk.StackProps {
   githubRepo?: string;
   githubOwner?: string;
   githubBranch?: string;
-  stackName: string;
+  stackName?: string;
 }
 
 export class CICDStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props: CICDStackProps) {
+  constructor(scope: Construct, id: string, props?: CICDStackProps) {
     super(scope, id, props);
 
-    const githubOwner = props.githubOwner || 'harshasm123';
-    const githubRepo = props.githubRepo || 'CI-Alerts-System-Manual';
-    const githubBranch = props.githubBranch || 'main';
-    const targetStackName = props.stackName;
+    const githubOwner = props?.githubOwner || 'harshasm123';
+    const githubRepo = props?.githubRepo || 'CI-Alerts-System-Manual';
+    const githubBranch = props?.githubBranch || 'main';
+    const targetStackName = props?.stackName || 'CIAlertStack';
 
     // Artifact Bucket
     const artifactBucket = new s3.Bucket(this, 'ArtifactBucket', {
@@ -224,11 +224,6 @@ export class CICDStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'SetupInstructions', {
       value: 'Create GitHub token in Secrets Manager: aws secretsmanager create-secret --name github-token --secret-string YOUR_GITHUB_TOKEN',
       description: 'Setup Instructions',
-    });
-
-    new cdk.CfnOutput(this, 'DeploymentTarget', {
-      value: targetStackName,
-      description: 'Target stack for deployment',
     });
   }
 }

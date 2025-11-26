@@ -5,16 +5,11 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import { Construct } from 'constructs';
 
-interface FrontendStackProps extends cdk.StackProps {
-  apiUrl: string;
-  userPoolId: string;
-}
-
 export class FrontendStack extends cdk.Stack {
   public readonly distributionUrl: string;
   public readonly bucketUrl: string;
 
-  constructor(scope: Construct, id: string, props: FrontendStackProps) {
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
     // S3 Bucket for static website hosting (no VPC needed)
@@ -59,16 +54,6 @@ export class FrontendStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'BucketName', {
       value: websiteBucket.bucketName,
       description: 'S3 Bucket Name',
-    });
-
-    new cdk.CfnOutput(this, 'ApiUrlConfig', {
-      value: props.apiUrl,
-      description: 'API URL from Core Stack',
-    });
-
-    new cdk.CfnOutput(this, 'UserPoolIdConfig', {
-      value: props.userPoolId,
-      description: 'User Pool ID from Core Stack',
     });
   }
 }
