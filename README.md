@@ -124,12 +124,21 @@ A production-grade AWS-based system that automatically ingests global drug/molec
 - X-Ray tracing
 - Cost monitoring
 
-## Development
+## 📚 Documentation
 
-See individual component READMEs:
-- [Infrastructure](./infrastructure/README.md)
-- [Frontend](./frontend/README.md)
-- [Lambdas](./lambdas/README.md)
-=======
-# CI-Alerts-System-Manual
-CI alert system final
+- **[QUICKSTART.md](QUICKSTART.md)** - 10-minute deployment guide
+- **[DOCS.md](DOCS.md)** - Complete documentation index
+- **[USA_HEALTHCARE_COMPETITIVE_INTELLIGENCE.md](USA_HEALTHCARE_COMPETITIVE_INTELLIGENCE.md)** - Healthcare domain context
+- **[USA_MOLECULES_DATABASE.md](USA_MOLECULES_DATABASE.md)** - Pharmaceutical molecules database
+
+## 🚀 Quick Deploy
+
+```bash
+./prereq.sh      # Install prerequisites
+./deploy.sh      # Deploy all 4 stacks
+./GET_URLS.sh    # Get deployed URLs
+```
+
+## 📁 Project Structure
+
+See [DOCS.md](DOCS.md) for complete project structure and file descriptions.

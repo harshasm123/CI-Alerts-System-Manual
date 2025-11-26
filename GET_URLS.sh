@@ -5,29 +5,67 @@
 echo "🔍 Fetching deployed resources..."
 echo ""
 
-REGION=$(aws configure get region || echo "us-east-1")
+REGION=$(aws configure get region)
+if [ -z "$REGION" ]; then
+    REGION="us-east-1"
+    echo "⚠️  No region configured. Defaulting to $REGION"
+fi
 
 echo "🌍 Region: $REGION"
 echo ""
 
-# Get Stack Outputs
-echo "📋 Stack Outputs:"
-API_URL=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text 2>/dev/null)
-USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null)
-USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text 2>/dev/null)
-DATA_BUCKET=$(aws cloudformation describe-stacks --stack-name $STACK_NAME --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`DataBucketName`].OutputValue' --output text 2>/dev/null)
+# Core Stack
+echo "=== CIAlertStack ==="
+if aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION &>/dev/null; then
+    API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text 2>/dev/null)
+    USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null)
+    USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text 2>/dev/null)
+    DATA_BUCKET=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`DataBucketName`].OutputValue' --output text 2>/dev/null)
+    
+    [ -n "$API_URL" ] && echo "  🌐 API Gateway: $API_URL"
+    [ -n "$USER_POOL_ID" ] && echo "  🔐 User Pool ID: $USER_POOL_ID"
+    [ -n "$USER_POOL_CLIENT_ID" ] && echo "  🔑 Client ID: $USER_POOL_CLIENT_ID"
+    [ -n "$DATA_BUCKET" ] && echo "  🪣 S3 Bucket: s3://$DATA_BUCKET"
+else
+    echo "  ❌ Not deployed"
+fi
 
-if [ -n "$API_URL" ]; then
-    echo "  🌐 API Gateway: $API_URL"
+echo ""
+echo "=== CIAlert-Frontend ==="
+if aws cloudformation describe-stacks --stack-name CIAlert-Frontend --region $REGION &>/dev/null; then
+    CLOUDFRONT_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontURL`].OutputValue' --output text 2>/dev/null)
+    ALB_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ALBURL`].OutputValue' --output text 2>/dev/null)
+    ECR_REPO=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ECRRepository`].OutputValue' --output text 2>/dev/null)
+    
+    [ -n "$CLOUDFRONT_URL" ] && echo "  🔗 CloudFront: $CLOUDFRONT_URL"
+    [ -n "$ALB_URL" ] && echo "  ⚖️ ALB: $ALB_URL"
+    [ -n "$ECR_REPO" ] && echo "  📦 ECR: $ECR_REPO"
+else
+    echo "  ❌ Not deployed"
 fi
-if [ -n "$USER_POOL_ID" ]; then
-    echo "  🔐 User Pool ID: $USER_POOL_ID"
+
+echo ""
+echo "=== CIAlert-Monitoring ==="
+if aws cloudformation describe-stacks --stack-name CIAlert-Monitoring --region $REGION &>/dev/null; then
+    DASHBOARD_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Monitoring --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`DashboardURL`].OutputValue' --output text 2>/dev/null)
+    ALERT_TOPIC=$(aws cloudformation describe-stacks --stack-name CIAlert-Monitoring --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`AlertTopicArn`].OutputValue' --output text 2>/dev/null)
+    
+    [ -n "$DASHBOARD_URL" ] && echo "  📊 Dashboard: $DASHBOARD_URL"
+    [ -n "$ALERT_TOPIC" ] && echo "  🔔 Alerts: $ALERT_TOPIC"
+else
+    echo "  ❌ Not deployed"
 fi
-if [ -n "$USER_POOL_CLIENT_ID" ]; then
-    echo "  🔑 Client ID: $USER_POOL_CLIENT_ID"
-fi
-if [ -n "$DATA_BUCKET" ]; then
-    echo "  🪣 S3 Bucket: s3://$DATA_BUCKET"
+
+echo ""
+echo "=== CIAlert-CICD ==="
+if aws cloudformation describe-stacks --stack-name CIAlert-CICD --region $REGION &>/dev/null; then
+    REPO_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-CICD --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`RepositoryCloneUrl`].OutputValue' --output text 2>/dev/null)
+    PIPELINE_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-CICD --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`PipelineUrl`].OutputValue' --output text 2>/dev/null)
+    
+    [ -n "$REPO_URL" ] && echo "  💻 CodeCommit: $REPO_URL"
+    [ -n "$PIPELINE_URL" ] && echo "  🔄 Pipeline: $PIPELINE_URL"
+else
+    echo "  ❌ Not deployed"
 fi
 
 echo ""
@@ -43,14 +81,17 @@ for func in $(aws lambda list-functions --region $REGION --query 'Functions[?con
 done
 
 echo ""
-echo "🧪 Test Commands:"
+echo "=== Test Commands ==="
 if [ -n "$API_URL" ]; then
-    echo "  # Get insights"
-    echo "  curl ${API_URL}insights"
+    echo "# Get insights"
+    echo "curl ${API_URL}insights"
     echo ""
-    echo "  # Add to watchlist"
-    echo "  curl -X POST ${API_URL}watchlist -H 'Content-Type: application/json' -d '{\"userId\":\"test\",\"molecule\":\"Keytruda\"}'"
+    echo "# Add to watchlist"
+    echo "curl -X POST ${API_URL}watchlist -H 'Content-Type: application/json' -d '{\"userId\":\"test\",\"molecule\":\"Keytruda\"}'"
     echo ""
-    echo "  # Trigger PubMed ingestion"
-    echo "  aws lambda invoke --function-name \$(aws lambda list-functions --query 'Functions[?contains(FunctionName, \`PubMed\`)].FunctionName' --output text) --region $REGION response.json"
+    echo "# Trigger PubMed ingestion"
+    PUBMED_FUNC=$(aws lambda list-functions --region $REGION --query 'Functions[?contains(FunctionName, `PubMed`)].FunctionName' --output text 2>/dev/null)
+    [ -n "$PUBMED_FUNC" ] && echo "aws lambda invoke --function-name $PUBMED_FUNC --region $REGION response.json"
+else
+    echo "Deploy CIAlertStack first: ./deploy.sh"
 fi

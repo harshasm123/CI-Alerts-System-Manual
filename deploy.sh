@@ -5,23 +5,25 @@ set -e
 
 echo "🚀 Starting CI Alert System Deployment"
 
-# Configuration - Get region from AWS CLI config
+# Configuration - Dynamic region detection
 REGION=$(aws configure get region)
 if [ -z "$REGION" ]; then
-    echo "⚠️  No region configured in AWS CLI. Using us-east-1 as default."
     REGION="us-east-1"
-    aws configure set region us-east-1
+    aws configure set region $REGION
+    echo "ℹ️  No region configured. Using $REGION"
 fi
 
-# Check for CloudFormation hook issues in us-west-2
-if [ "$REGION" = "us-west-2" ]; then
-    echo "⚠️  WARNING: us-west-2 has CloudFormation hooks that block CDK bootstrap"
-    echo "   AWS::EarlyValidation::ResourceExistenceCheck prevents CDKToolkit creation"
-    echo "   Switching to us-east-1..."
-    REGION="us-east-1"
-    aws configure set region us-east-1
-    echo "✅ Region changed to us-east-1"
-fi
+# Check for problematic regions
+PROBLEMATIC_REGIONS=("us-west-2")
+for prob_region in "${PROBLEMATIC_REGIONS[@]}"; do
+    if [ "$REGION" = "$prob_region" ]; then
+        echo "⚠️  $REGION has CloudFormation hooks blocking CDK"
+        REGION="us-east-1"
+        aws configure set region $REGION
+        echo "✅ Switched to $REGION"
+        break
+    fi
+done
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 DATA_BUCKET="ci-alert-data-${ACCOUNT_ID}-${REGION}"
@@ -56,27 +58,66 @@ fi
 
 echo "✅ Prerequisites check complete"
 
-# Step 1: Clean up failed CDKToolkit stack if exists
-echo "🧹 Checking for failed CDKToolkit stack..."
+# Step 1: Check and clean CDKToolkit stack
+echo "🧹 Checking CDKToolkit stack health..."
 STACK_STATUS=$(aws cloudformation describe-stacks --stack-name CDKToolkit --region $REGION --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "NONE")
 
-if [ "$STACK_STATUS" = "ROLLBACK_COMPLETE" ] || [ "$STACK_STATUS" = "REVIEW_IN_PROGRESS" ]; then
-    echo "  Found failed stack in $STACK_STATUS state. Deleting..."
-    aws cloudformation delete-stack --stack-name CDKToolkit --region $REGION
-    echo "  Waiting for deletion..."
-    aws cloudformation wait stack-delete-complete --stack-name CDKToolkit --region $REGION 2>/dev/null || true
-    echo "  ✅ Cleanup complete"
-fi
+case $STACK_STATUS in
+    "CREATE_COMPLETE"|"UPDATE_COMPLETE")
+        echo "  ✅ CDKToolkit is healthy ($STACK_STATUS)"
+        # Verify SSM parameter exists
+        if aws ssm get-parameter --name /cdk-bootstrap/hnb659fds/version --region $REGION &>/dev/null; then
+            echo "  ✅ Bootstrap version parameter exists"
+        else
+            echo "  ⚠️  Bootstrap parameter missing, will re-bootstrap"
+            STACK_STATUS="INCOMPLETE"
+        fi
+        ;;
+    "ROLLBACK_COMPLETE"|"REVIEW_IN_PROGRESS"|"CREATE_FAILED"|"ROLLBACK_IN_PROGRESS")
+        echo "  ⚠️  Found failed stack in $STACK_STATUS state. Cleaning up..."
+        aws cloudformation delete-stack --stack-name CDKToolkit --region $REGION
+        echo "  Waiting for deletion..."
+        aws cloudformation wait stack-delete-complete --stack-name CDKToolkit --region $REGION 2>/dev/null || true
+        echo "  ✅ Cleanup complete"
+        STACK_STATUS="NONE"
+        ;;
+    "NONE")
+        echo "  ℹ️  CDKToolkit not found, will bootstrap"
+        ;;
+    *)
+        echo "  ℹ️  CDKToolkit status: $STACK_STATUS"
+        ;;
+esac
 
 # Step 2: Bootstrap CDK (if needed)
-echo "🏗️  Bootstrapping CDK in $REGION..."
-cdk bootstrap aws://${ACCOUNT_ID}/${REGION} || {
-    echo "❌ CDK bootstrap failed"
-    echo "   If you see AWS::EarlyValidation::ResourceExistenceCheck errors:"
-    echo "   1. Contact your AWS administrator to disable the CloudFormation hook"
-    echo "   2. Or use a different region: aws configure set region us-east-1"
-    exit 1
-}
+if [ "$STACK_STATUS" = "NONE" ] || [ "$STACK_STATUS" = "INCOMPLETE" ]; then
+    echo "🏗️  Bootstrapping CDK in $REGION..."
+    if cdk bootstrap aws://${ACCOUNT_ID}/${REGION}; then
+        echo "  ✅ CDK bootstrap successful"
+        
+        # Verify bootstrap completed successfully
+        FINAL_STATUS=$(aws cloudformation describe-stacks --stack-name CDKToolkit --region $REGION --query 'Stacks[0].StackStatus' --output text 2>/dev/null)
+        if [ "$FINAL_STATUS" != "CREATE_COMPLETE" ] && [ "$FINAL_STATUS" != "UPDATE_COMPLETE" ]; then
+            echo "  ❌ Bootstrap failed with status: $FINAL_STATUS"
+            exit 1
+        fi
+        
+        # Verify SSM parameter
+        if ! aws ssm get-parameter --name /cdk-bootstrap/hnb659fds/version --region $REGION &>/dev/null; then
+            echo "  ❌ Bootstrap parameter not created"
+            exit 1
+        fi
+        echo "  ✅ Bootstrap verification passed"
+    else
+        echo "  ❌ CDK bootstrap failed"
+        echo "     If you see AWS::EarlyValidation::ResourceExistenceCheck errors:"
+        echo "     1. Run: ./fix-region.sh"
+        echo "     2. Or contact AWS administrator to disable CloudFormation hook"
+        exit 1
+    fi
+else
+    echo "  ℹ️  CDK already bootstrapped, skipping"
+fi
 
 # Step 3: Install dependencies
 echo "📦 Installing dependencies..."
@@ -110,7 +151,13 @@ echo ""
 echo "🎉 Deployment Complete!"
 echo "====================="
 echo ""
-echo "📊 Stack Information:"
+echo "📊 Deployed Stacks:"
+echo "  ✓ CIAlertStack (Core: DynamoDB, Lambda, API Gateway, Cognito)"
+echo "  ✓ CIAlert-Frontend (ECS, CloudFront, ALB, WAF)"
+echo "  ✓ CIAlert-Monitoring (CloudWatch, Alarms, SNS)"
+echo "  ✓ CIAlert-CICD (CodePipeline, CodeBuild, CodeCommit)"
+echo ""
+echo "📋 Stack Outputs:"
 echo "  Region: $REGION"
 echo "  Account: $ACCOUNT_ID"
 if [ -n "$API_URL" ]; then
@@ -131,8 +178,9 @@ echo "  # Trigger ingestion"
 echo "  aws lambda invoke --function-name CIAlertStack-PubMedFunction --region $REGION response.json"
 echo ""
 echo "📝 Next Steps:"
-echo "1. Enable Bedrock models: AWS Console → Bedrock → Model Access"
-echo "2. Test API endpoints using commands above"
-echo "3. Check CloudWatch logs for Lambda execution"
+echo "1. View all URLs: ./GET_URLS.sh"
+echo "2. Enable Bedrock models: AWS Console → Bedrock → Model Access"
+echo "3. Test API endpoints using commands above"
+echo "4. Check CloudWatch Dashboard for monitoring"
 echo ""
-echo "✅ CI Alert System is ready!"
+echo "✅ All 4 stacks deployed successfully!"
