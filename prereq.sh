@@ -55,7 +55,7 @@ fi
 # Install AWS CDK
 if ! command -v cdk &> /dev/null; then
     echo "📦 Installing AWS CDK..."
-    npm install -g aws-cdk
+    sudo npm install -g aws-cdk
 fi
 
 # Configure AWS CLI
