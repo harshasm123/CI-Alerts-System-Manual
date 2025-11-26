@@ -11,6 +11,13 @@ if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
     exit 1
 fi
 
+# Install unzip if not present
+if ! command -v unzip &> /dev/null; then
+    echo "📦 Installing unzip..."
+    sudo apt-get update
+    sudo apt-get install -y unzip
+fi
+
 # Install AWS CLI v2
 if ! command -v aws &> /dev/null; then
     echo "📦 Installing AWS CLI v2..."
