@@ -31,17 +31,19 @@ def lambda_handler(event, context):
             content = message['content']
             source = message.get('source', 'Unknown')
             
-            # Generate insights using Bedrock Claude
+            # Generate insights using Amazon Nova Pro
             prompt = PROMPT_TEMPLATE.format(molecule=molecule, content=content)
             
-            # Use Claude 3.5 Haiku for cost-effective batch processing
-            # Sonnet: $3/$15 per 1M tokens | Haiku: $0.25/$1.25 per 1M tokens
+            # Use Amazon Nova Pro for cost-effective batch processing
+            # Nova Pro: $0.80/$3.20 per 1M tokens with 300K context window
             response = bedrock.invoke_model(
-                modelId='anthropic.claude-3-5-haiku-20241022-v1:0',
+                modelId='amazon.nova-pro-v1:0',
                 body=json.dumps({
-                    'anthropic_version': 'bedrock-2023-05-31',
-                    'max_tokens': 1000,
-                    'messages': [{'role': 'user', 'content': prompt}]
+                    'messages': [{'role': 'user', 'content': [{'text': prompt}]}],
+                    'inferenceConfig': {
+                        'maxTokens': 1000,
+                        'temperature': 0.7
+                    }
                 })
             )
             

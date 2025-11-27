@@ -58,7 +58,7 @@ export class BedrockAgentStack extends cdk.Stack {
     const agent = new bedrock.CfnAgent(this, 'Agent', {
       agentName: 'ci-alert-agent',
       agentResourceRoleArn: agentRole.roleArn,
-      foundationModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+      foundationModel: 'amazon.nova-pro-v1:0',
       instruction: `You are a pharmaceutical competitive intelligence analyst assistant.
 
 Your role:
