@@ -1,0 +1,184 @@
+╔══════════════════════════════════════════════════════════════════════════════════════╗
+║                    CI ALERT SYSTEM - ARCHITECTURE DIAGRAM                            ║
+║              Pharmaceutical Competitive Intelligence Platform (AWS)                  ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              EXTERNAL DATA SOURCES                                  │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+     │                    │                │              │              │
+     │                    │                │              │              │
+  PubMed            ClinicalTrials      FDA RSS       EMA RSS      WIPO Patents
+  (API)             .gov (API)          (Feed)        (Feed)       (PatentScope)
+     │                    │                │              │              │
+     └────────────────────┴────────────────┴──────────────┴──────────────┘
+                                          │
+                                          ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                            INGESTION LAYER (Lambda)                                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│  │   PubMed     │  │  Clinical    │  │  FDA/EMA     │  │    WIPO      │           │
+│  │  Ingestion   │  │   Trials     │  │  Ingestion   │  │  Ingestion   │           │
+│  │   Lambda     │  │   Lambda     │  │   Lambda     │  │   Lambda     │           │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘           │
+│         │                 │                 │                 │                     │
+│         └─────────────────┴─────────────────┴─────────────────┘                     │
+│                                     │                                               │
+│                    ┌────────────────┴────────────────┐                              │
+│                    │   EventBridge Scheduler         │                              │
+│                    │   (Midnight UTC - Daily Run)    │                              │
+│                    └─────────────────────────────────┘                              │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+                                          │
+                                          ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              MESSAGE QUEUE (SQS)                                    │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                         Processing Queue                                      │ │
+│  │                    (Decouples Ingestion/Processing)                           │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                      Dead Letter Queue (DLQ)                                  │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+                                          │
+                                          ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                          AI PROCESSING LAYER (Lambda)                               │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                        Processor Lambda                                       │ │
+│  │                    (Python 3.12 - ARM64)                                      │ │
+│  │                                                                               │ │
+│  │  • Text normalization & entity extraction                                    │ │
+│  │  • Relevance scoring & impact analysis                                       │ │
+│  │  • AI-powered summarization                                                  │ │
+│  └───────────────────────────────┬───────────────────────────────────────────────┘ │
+│                                  │                                                 │
+│                                  ▼                                                 │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                      AWS Bedrock (AI Models)                                  │ │
+│  │  ┌─────────────────────────────────────────────────────────────────────────┐ │ │
+│  │  │  Claude 3.5 Haiku (Batch Processing)                                    │ │ │
+│  │  │  • Cost-effective: $0.25/$1.25 per 1M tokens                            │ │ │
+│  │  │  • Sentiment analysis & summarization                                   │ │ │
+│  │  └─────────────────────────────────────────────────────────────────────────┘ │ │
+│  │  ┌─────────────────────────────────────────────────────────────────────────┐ │ │
+│  │  │  Bedrock Agent (Claude 3.5 Sonnet v2)                                   │ │ │
+│  │  │  • Advanced analysis & strategic insights                               │ │ │
+│  │  │  • Query insights, analyze trends, compare molecules                    │ │ │
+│  │  └─────────────────────────────────────────────────────────────────────────┘ │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+                                          │
+                                          ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                            STORAGE LAYER (DynamoDB)                                 │
+│  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐     │
+│  │   InsightsTable      │  │   WatchlistTable     │  │  UserSettingsTable   │     │
+│  │                      │  │                      │  │                      │     │
+│  │  PK: molecule        │  │  PK: userId          │  │  PK: userId          │     │
+│  │  SK: timestamp       │  │  SK: molecule        │  │  • email             │     │
+│  │  • insights          │  │  • created_at        │  │  • digestEnabled     │     │
+│  │  • source            │  │  • aliases           │  │  • preferences       │     │
+│  │  • sentiment         │  │                      │  │                      │     │
+│  │  • raw_content       │  │                      │  │                      │     │
+│  └──────────────────────┘  └──────────────────────┘  └──────────────────────┘     │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+                                          │
+                                          │
+        ┌─────────────────────────────────┼─────────────────────────────────┐
+        │                                 │                                 │
+        ▼                                 ▼                                 ▼
+┌───────────────────┐         ┌───────────────────────┐         ┌───────────────────┐
+│  NOTIFICATION     │         │    API LAYER          │         │   FRONTEND        │
+│     LAYER         │         │  (API Gateway)        │         │     LAYER         │
+└───────────────────┘         └───────────────────────┘         └───────────────────┘
+        │                                 │                                 │
+        │                                 │                                 │
+        ▼                                 ▼                                 ▼
+┌───────────────────┐         ┌───────────────────────┐         ┌───────────────────┐
+│  EventBridge      │         │  Cognito Authorizer   │         │   CloudFront      │
+│  (9 AM UTC)       │         │  (JWT Validation)     │         │   + WAF           │
+│                   │         │                       │         │                   │
+│  Daily Digest     │         │  Protected Endpoints: │         │   Global CDN      │
+│  Scheduler        │         │  • GET /insights      │         │   HTTPS Only      │
+└────────┬──────────┘         │  • GET /watchlist     │         └─────────┬─────────┘
+         │                    │  • POST /watchlist    │                   │
+         ▼                    │  • DELETE /watchlist  │                   ▼
+┌───────────────────┐         └───────────┬───────────┘         ┌───────────────────┐
+│  Digest Lambda    │                     │                     │   S3 Static       │
+│                   │                     ▼                     │   Website         │
+│  • Query user     │         ┌───────────────────────┐         │                   │
+│    watchlists     │         │   Lambda Functions    │         │  React App        │
+│  • Fetch insights │         │                       │         │  • Dashboard      │
+│  • Generate email │         │  • WatchlistFunction  │         │  • Watchlist Mgmt │
+│  • Send via SES   │         │  • InsightsFunction   │         │  • Insights View  │
+└────────┬──────────┘         │  • SettingsFunction   │         │  • Settings       │
+         │                    └───────────────────────┘         │  • AWS Amplify    │
+         ▼                                                      └───────────────────┘
+┌───────────────────┐                                                    │
+│   Amazon SES      │                                                    │
+│                   │                                                    ▼
+│  • Email delivery │                                          ┌───────────────────┐
+│  • Templates      │                                          │  Cognito User     │
+│  • Bounce handling│                                          │  Pool             │
+└───────────────────┘                                          │                   │
+                                                               │  • Email sign-in  │
+                                                               │  • JWT tokens     │
+                                                               │  • Auto-verify    │
+                                                               └───────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                         MONITORING & OBSERVABILITY                                  │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                          CloudWatch Dashboard                                 │ │
+│  │  • API Gateway: requests, latency, errors                                    │ │
+│  │  • Lambda: invocations, duration, errors                                     │ │
+│  │  • DynamoDB: read/write capacity, throttling                                 │ │
+│  │  • SQS: messages sent/received, queue depth                                  │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                          CloudWatch Alarms                                    │ │
+│  │  • API 5xx errors > 10                                                       │ │
+│  │  • API latency > 2000ms                                                      │ │
+│  │  • Lambda errors > 5                                                         │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              CI/CD PIPELINE                                         │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │  GitHub → CodePipeline → CodeBuild → CDK Deploy → Production                 │ │
+│  │                                                                               │ │
+│  │  • Automated testing                                                          │ │
+│  │  • Infrastructure as Code (CDK)                                               │ │
+│  │  • Blue/green deployments                                                     │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════════════╗
+║                              KEY FEATURES                                            ║
+╠══════════════════════════════════════════════════════════════════════════════════════╣
+║  ✓ Secure Authentication (Cognito JWT)                                              ║
+║  ✓ AI-Powered Insights (Bedrock Claude 3.5 Haiku/Sonnet)                            ║
+║  ✓ Daily Email Digests (9 AM UTC via SES)                                           ║
+║  ✓ User Molecule Watchlists (DynamoDB)                                              ║
+║  ✓ Multi-Source Ingestion (PubMed, FDA, EMA, ClinicalTrials, WIPO)                  ║
+║  ✓ Serverless Architecture (Lambda, API Gateway, S3)                                ║
+║  ✓ Production Monitoring (CloudWatch Dashboards & Alarms)                           ║
+║  ✓ Cost-Optimized (~$10-15/month for light usage)                                   ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════════════╗
+║                           DATA FLOW SUMMARY                                          ║
+╠══════════════════════════════════════════════════════════════════════════════════════╣
+║  1. EventBridge triggers ingestion Lambdas at midnight UTC                           ║
+║  2. Ingestion Lambdas fetch data from external APIs → SQS Queue                      ║
+║  3. Processor Lambda consumes SQS messages → Bedrock Claude analysis                 ║
+║  4. AI-generated insights stored in DynamoDB InsightsTable                           ║
+║  5. EventBridge triggers Digest Lambda at 9 AM UTC                                   ║
+║  6. Digest Lambda queries user watchlists → generates personalized emails            ║
+║  7. SES sends daily digest emails to verified users                                  ║
+║  8. Users access React UI via CloudFront → Cognito auth → API Gateway               ║
+║  9. API Gateway validates JWT → Lambda functions → DynamoDB CRUD operations          ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝
