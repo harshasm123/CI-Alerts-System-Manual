@@ -168,20 +168,29 @@ cd infrastructure
 npm run build
 
 if [ "$SKIP_CICD" = true ]; then
-    echo "📦 Deploying 3 stacks (skipping CICD)..."
-    cdk deploy CIAlertStack CIAlert-Frontend CIAlert-Monitoring --require-approval never
+    echo "📦 Deploying 4 stacks (skipping CICD)..."
+    cdk deploy CIAlertStack CIAlert-Frontend CIAlert-Monitoring CIAlert-BedrockAgent --require-approval never
 else
-    echo "📦 Deploying all 4 stacks..."
+    echo "📦 Deploying all 5 stacks..."
     cdk deploy --all --require-approval never
 fi
 cd ..
 
-# Step 6: Get stack outputs
+# Step 6: Prepare Bedrock Agent
+if aws cloudformation describe-stacks --stack-name CIAlert-BedrockAgent --region $REGION &>/dev/null; then
+    echo "🤖 Preparing Bedrock Agent..."
+    AGENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-BedrockAgent --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`AgentId`].OutputValue' --output text 2>/dev/null)
+    if [ -n "$AGENT_ID" ]; then
+        aws bedrock-agent prepare-agent --agent-id $AGENT_ID --region $REGION 2>/dev/null && echo "  ✅ Agent prepared" || echo "  ⚠️  Agent preparation failed (may need Bedrock model access enabled)"
+    fi
+fi
+
+# Step 7: Get stack outputs
 echo "📋 Getting stack outputs..."
 API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text 2>/dev/null || echo "")
 USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null || echo "")
 
-# Step 7: Test deployment
+# Step 8: Test deployment
 echo "🧪 Testing deployment..."
 if [ -n "$API_URL" ]; then
     echo "Testing API endpoint: $API_URL"
@@ -196,6 +205,7 @@ echo "📊 Deployed Stacks:"
 echo "  ✓ CIAlertStack (Core: DynamoDB, Lambda, API Gateway, Cognito)"
 echo "  ✓ CIAlert-Frontend (S3 Static Website + CloudFront)"
 echo "  ✓ CIAlert-Monitoring (CloudWatch, Alarms, SNS)"
+echo "  ✓ CIAlert-BedrockAgent (Bedrock Agent + Action Handler)"
 if [ "$SKIP_CICD" = true ]; then
     echo "  ✗ CIAlert-CICD (Skipped - no GitHub token)"
 else
@@ -223,16 +233,16 @@ echo "  # Trigger ingestion"
 echo "  aws lambda invoke --function-name CIAlertStack-PubMedFunction --region $REGION response.json"
 echo ""
 echo "📝 Next Steps:"
-echo "1. Deploy frontend: bash deploy-cognito-frontend.sh"
-echo "2. Create test user (see QUICKSTART.md)"
-echo "3. Enable Bedrock models: AWS Console → Bedrock → Model Access"
+echo "1. Enable Bedrock models: AWS Console → Bedrock → Model Access → Enable Claude 3.5 Sonnet v2 + Claude 3.5 Haiku"
+echo "2. Deploy frontend: bash deploy-cognito-frontend.sh"
+echo "3. Create test user (see QUICKSTART.md)"
 if [ "$SKIP_CICD" = true ]; then
     echo "4. Setup GitHub token to deploy CICD: aws secretsmanager create-secret --name github-token --secret-string YOUR_TOKEN --region $REGION"
     echo "5. Deploy CICD: cd infrastructure && cdk deploy CIAlert-CICD"
 fi
 echo ""
 if [ "$SKIP_CICD" = true ]; then
-    echo "✅ 3 stacks deployed successfully (CICD skipped)!"
+    echo "✅ 4 stacks deployed successfully (CICD skipped)!"
 else
-    echo "✅ All 4 stacks deployed successfully!"
+    echo "✅ All 5 stacks deployed successfully!"
 fi

@@ -34,8 +34,10 @@ def lambda_handler(event, context):
             # Generate insights using Bedrock Claude
             prompt = PROMPT_TEMPLATE.format(molecule=molecule, content=content)
             
+            # Use Claude 3.5 Haiku for cost-effective batch processing
+            # Sonnet: $3/$15 per 1M tokens | Haiku: $0.25/$1.25 per 1M tokens
             response = bedrock.invoke_model(
-                modelId='anthropic.claude-3-sonnet-20240229-v1:0',
+                modelId='anthropic.claude-3-5-haiku-20241022-v1:0',
                 body=json.dumps({
                     'anthropic_version': 'bedrock-2023-05-31',
                     'max_tokens': 1000,

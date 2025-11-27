@@ -57,6 +57,18 @@ else
 fi
 
 echo ""
+echo "=== CIAlert-BedrockAgent ==="
+if aws cloudformation describe-stacks --stack-name CIAlert-BedrockAgent --region $REGION &>/dev/null; then
+    AGENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-BedrockAgent --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`AgentId`].OutputValue' --output text 2>/dev/null)
+    AGENT_ALIAS_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-BedrockAgent --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`AgentAliasId`].OutputValue' --output text 2>/dev/null)
+    
+    [ -n "$AGENT_ID" ] && echo "  🤖 Agent ID: $AGENT_ID"
+    [ -n "$AGENT_ALIAS_ID" ] && echo "  🎯 Alias ID: $AGENT_ALIAS_ID"
+else
+    echo "  ❌ Not deployed"
+fi
+
+echo ""
 echo "=== CIAlert-CICD ==="
 if aws cloudformation describe-stacks --stack-name CIAlert-CICD --region $REGION &>/dev/null; then
     REPO_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-CICD --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`RepositoryCloneUrl`].OutputValue' --output text 2>/dev/null)

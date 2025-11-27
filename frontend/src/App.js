@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Amplify } from 'aws-amplify';
 import { signIn, signUp, signOut, getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
+import Chat from './Chat';
 import './App.css';
 
 const API_URL = process.env.REACT_APP_API_URL;
@@ -28,6 +29,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [authToken, setAuthToken] = useState('');
   const [settings, setSettings] = useState({
     emailFrequency: 'daily',
     notificationEmail: '',
@@ -99,7 +101,9 @@ function App() {
 
   const getAuthToken = async () => {
     const session = await fetchAuthSession();
-    return session.tokens.idToken.toString();
+    const token = session.tokens.idToken.toString();
+    setAuthToken(token);
+    return token;
   };
 
   const loadWatchlist = async () => {
@@ -251,14 +255,21 @@ function App() {
       </header>
 
       <nav className="tabs">
-        <button className={activeTab === 'dashboard' ? 'active' : ''} onClick={() => setActiveTab('dashboard')}>Dashboard</button>
-        <button className={activeTab === 'watchlist' ? 'active' : ''} onClick={() => setActiveTab('watchlist')}>Watchlist</button>
-        <button className={activeTab === 'insights' ? 'active' : ''} onClick={() => setActiveTab('insights')}>Insights</button>
-        <button className={activeTab === 'settings' ? 'active' : ''} onClick={() => setActiveTab('settings')}>Settings</button>
+        <button className={activeTab === 'dashboard' ? 'active' : ''} onClick={() => setActiveTab('dashboard')}>📊 Dashboard</button>
+        <button className={activeTab === 'chat' ? 'active' : ''} onClick={() => setActiveTab('chat')}>🤖 AI Assistant</button>
+        <button className={activeTab === 'watchlist' ? 'active' : ''} onClick={() => setActiveTab('watchlist')}>📋 Watchlist</button>
+        <button className={activeTab === 'insights' ? 'active' : ''} onClick={() => setActiveTab('insights')}>💡 Insights</button>
+        <button className={activeTab === 'settings' ? 'active' : ''} onClick={() => setActiveTab('settings')}>⚙️ Settings</button>
       </nav>
 
       <div className="content">
         {error && <div className="alert">{error}</div>}
+
+        {activeTab === 'chat' && (
+          <div className="chat-tab">
+            <Chat apiUrl={API_URL} authToken={authToken} />
+          </div>
+        )}
 
         {activeTab === 'dashboard' && (
           <div className="dashboard">

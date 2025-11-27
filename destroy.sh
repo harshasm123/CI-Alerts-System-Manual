@@ -145,11 +145,13 @@ aws ec2 describe-vpcs --filters "Name=tag:Name,Values=*ci-alert*" --query 'Vpcs[
     aws ec2 delete-vpc --vpc-id $vpc || true
 done
 
-# 12. Delete CloudFormation stacks
+# 12. Delete CloudFormation stacks (in reverse order)
 echo "📚 Cleaning up CloudFormation stacks..."
-aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE --query 'StackSummaries[?contains(StackName, `ci-alert`) || contains(StackName, `CIAlert`)].StackName' --output text | tr '\t' '\n' | while read stack; do
-    echo "Deleting CloudFormation stack: $stack"
-    aws cloudformation delete-stack --stack-name $stack || true
+for stack in CIAlert-CICD CIAlert-BedrockAgent CIAlert-Monitoring CIAlert-Frontend CIAlertStack; do
+    if aws cloudformation describe-stacks --stack-name $stack &>/dev/null; then
+        echo "Deleting CloudFormation stack: $stack"
+        aws cloudformation delete-stack --stack-name $stack || true
+    fi
 done
 
 # 13. Delete IAM roles and policies
