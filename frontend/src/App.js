@@ -165,31 +165,18 @@ function App() {
         }
       };
       
-      console.log('Saving settings to:', `${API_URL}user-settings`);
-      console.log('Payload:', payload);
-      
       const res = await fetch(`${API_URL}user-settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: token },
         body: JSON.stringify(payload)
       });
       
-      console.log('Response status:', res.status);
-      const responseText = await res.text();
-      console.log('Response:', responseText);
-      
       if (res.ok) {
         setError('✅ Settings saved successfully!');
         setTimeout(() => setError(''), 3000);
       } else {
-        let errMsg = 'Failed to save';
-        try {
-          const errData = JSON.parse(responseText);
-          errMsg = errData.error || errData.message || errMsg;
-        } catch (e) {
-          errMsg = responseText || errMsg;
-        }
-        throw new Error(errMsg);
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to save');
       }
     } catch (err) {
       console.error('Save settings error:', err);

@@ -98,6 +98,11 @@ export class CIAlertStack extends cdk.Stack {
       resources: ['*'],
     }));
 
+    lambdaRole.addToPolicy(new iam.PolicyStatement({
+      actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+      resources: ['*'],
+    }));
+
     // Processor Lambda
     const processorFunction = new lambda.Function(this, 'ProcessorFunction', {
       runtime: lambda.Runtime.PYTHON_3_12,
@@ -125,6 +130,21 @@ export class CIAlertStack extends cdk.Stack {
       },
     });
 
+    // Daily Digest Lambda
+    const digestFunction = new lambda.Function(this, 'DigestFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'daily_digest.lambda_handler',
+      code: lambda.Code.fromAsset('../lambdas/notifications'),
+      timeout: cdk.Duration.seconds(300),
+      role: lambdaRole,
+      environment: {
+        INSIGHTS_TABLE: insightsTable.tableName,
+        WATCHLIST_TABLE: watchlistTable.tableName,
+        USER_SETTINGS_TABLE: userSettingsTable.tableName,
+        FROM_EMAIL: 'noreply@example.com',
+      },
+    });
+
     // API Lambdas
     const watchlistFunction = new lambda.Function(this, 'WatchlistFunction', {
       runtime: lambda.Runtime.PYTHON_3_12,
@@ -145,6 +165,17 @@ export class CIAlertStack extends cdk.Stack {
       role: lambdaRole,
       environment: {
         INSIGHTS_TABLE: insightsTable.tableName,
+      },
+    });
+
+    const userSettingsFunction = new lambda.Function(this, 'UserSettingsFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'user_settings_api.handler',
+      code: lambda.Code.fromAsset('../lambdas/api'),
+      timeout: cdk.Duration.seconds(30),
+      role: lambdaRole,
+      environment: {
+        USER_SETTINGS_TABLE: userSettingsTable.tableName,
       },
     });
 
@@ -183,11 +214,33 @@ export class CIAlertStack extends cdk.Stack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
 
-    // EventBridge Rule for daily ingestion
-    const dailyRule = new events.Rule(this, 'DailyIngestionRule', {
+    const userSettingsResource = api.root.addResource('user-settings');
+    userSettingsResource.addMethod('GET', new apigateway.LambdaIntegration(userSettingsFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+    userSettingsResource.addMethod('PUT', new apigateway.LambdaIntegration(userSettingsFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    // SQS Event Source for Processor Lambda
+    processorFunction.addEventSource(new lambda.eventSources.SqsEventSource(eventQueue, {
+      batchSize: 10,
+      maxBatchingWindow: cdk.Duration.seconds(5),
+    }));
+
+    // EventBridge Rule for daily ingestion (midnight UTC)
+    const dailyIngestionRule = new events.Rule(this, 'DailyIngestionRule', {
       schedule: events.Schedule.cron({ hour: '0', minute: '0' }),
     });
-    dailyRule.addTarget(new targets.LambdaFunction(pubmedFunction));
+    dailyIngestionRule.addTarget(new targets.LambdaFunction(pubmedFunction));
+
+    // EventBridge Rule for daily digest (9 AM UTC)
+    const dailyDigestRule = new events.Rule(this, 'DailyDigestRule', {
+      schedule: events.Schedule.cron({ hour: '9', minute: '0' }),
+    });
+    dailyDigestRule.addTarget(new targets.LambdaFunction(digestFunction));
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {

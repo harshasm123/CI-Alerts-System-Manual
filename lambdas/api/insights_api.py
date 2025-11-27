@@ -26,6 +26,16 @@ def lambda_handler(event, context):
         
         items = response.get('Items', [])
         
+        # Format items for frontend
+        formatted_items = []
+        for item in items:
+            formatted_items.append({
+                'molecule': item.get('molecule', ''),
+                'timestamp': item.get('timestamp', ''),
+                'summary': item.get('insights', item.get('raw_content', 'No summary available'))[:500],
+                'source': item.get('source', 'Unknown')
+            })
+        
         return {
             'statusCode': 200,
             'headers': {
@@ -33,8 +43,8 @@ def lambda_handler(event, context):
                 'Access-Control-Allow-Origin': '*'
             },
             'body': json.dumps({
-                'insights': items,
-                'count': len(items)
+                'insights': formatted_items,
+                'count': len(formatted_items)
             })
         }
         

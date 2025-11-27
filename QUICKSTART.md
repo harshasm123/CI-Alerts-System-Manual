@@ -1,8 +1,6 @@
-# CI Alert System - Quick Start Guide
+# CI Alert System - Complete Deployment Guide
 
-## 🚀 Deploy in 10 Minutes
-
-### Prerequisites
+## Prerequisites
 
 ```bash
 # Install Node.js 18+
@@ -23,9 +21,7 @@ aws configure
 
 ---
 
-## Deployment Steps
-
-### Step 1: Bootstrap CDK
+## Step 1: Bootstrap CDK
 
 ```bash
 bash check-bootstrap.sh
@@ -34,130 +30,244 @@ cdk bootstrap
 cd ..
 ```
 
-### Step 2: Deploy Infrastructure
+---
+
+## Step 2: Deploy Infrastructure
 
 ```bash
 bash deploy.sh
-
-# Deploys 4 stacks:
-# 1. CIAlertStack - Core (DynamoDB, Lambda, API Gateway, Cognito)
-# 2. CIAlert-Frontend - S3 + CloudFront
-# 3. CIAlert-Monitoring - CloudWatch
-# 4. CIAlert-CICD - CodePipeline (optional)
 ```
 
-### Step 3: Deploy Frontend with Authentication
+**Deploys 4 stacks (~8-10 minutes):**
+1. CIAlertStack - Core (DynamoDB, Lambda, API Gateway, Cognito, SQS, EventBridge)
+2. CIAlert-Frontend - S3 + CloudFront
+3. CIAlert-Monitoring - CloudWatch
+4. CIAlert-CICD - CodePipeline (optional)
+
+---
+
+## Step 3: Setup SES Email
+
+```bash
+bash setup-ses.sh
+```
+
+Enter your email address and verify it by clicking the link in your inbox.
+
+---
+
+## Step 4: Deploy Frontend
 
 ```bash
 bash deploy-cognito-frontend.sh
-
-# This will:
-# - Get Cognito config from stack outputs
-# - Build React app with AWS Amplify authentication
-# - Upload to S3
-# - Invalidate CloudFront cache
 ```
 
-### Step 4: Create Test User
+**This will (~3-5 minutes):**
+- Get Cognito config from stack outputs
+- Build React app with AWS Amplify
+- Upload to S3
+- Invalidate CloudFront cache
+
+---
+
+## Step 5: Create Test User
 
 ```bash
-# Get Cognito IDs
 USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text)
 USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text)
 
-# Sign up user
+# Sign up
 aws cognito-idp sign-up \
   --client-id $USER_POOL_CLIENT_ID \
   --username test@example.com \
-  --password Test123!
+  --password Test123! \
+  --user-attributes Name=email,Value=test@example.com
 
-# Confirm user (skip email verification)
+# Confirm (skip email verification)
 aws cognito-idp admin-confirm-user \
   --user-pool-id $USER_POOL_ID \
   --username test@example.com
 ```
 
-### Step 5: Access Frontend
+---
+
+## Step 6: Add User Email for Digests
 
 ```bash
-# Get CloudFront URL
-CLOUDFRONT_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue' --output text)
-FRONTEND_URL=$(aws cloudfront get-distribution --id $CLOUDFRONT_ID --query 'Distribution.DomainName' --output text)
+SETTINGS_TABLE=$(aws dynamodb list-tables --query "TableNames[?contains(@,'UserSettings')]|[0]" --output text)
 
-echo "Frontend: https://$FRONTEND_URL"
-
-# Login with: test@example.com / Test123!
+aws dynamodb put-item \
+  --table-name $SETTINGS_TABLE \
+  --item '{
+    "userId":{"S":"test@example.com"},
+    "email":{"S":"YOUR_VERIFIED_EMAIL"},
+    "digestEnabled":{"BOOL":true}
+  }'
 ```
 
----
-
-## Architecture
-
-### Core Stack (CIAlertStack)
-- **DynamoDB**: Insights, Watchlist, UserSettings tables
-- **Lambda**: Processor, PubMed ingestion, API handlers
-- **API Gateway**: REST API with Cognito authorizer
-- **Cognito**: User Pool with email sign-in, auto-verify
-- **EventBridge**: Daily ingestion schedule
-- **SQS**: Event queue
-- **S3**: Data bucket
-
-### Frontend Stack
-- **S3**: Static hosting
-- **CloudFront**: CDN with HTTPS
-- **React + AWS Amplify**: Authentication UI
-
-### Monitoring Stack
-- **CloudWatch**: Dashboards and alarms
-- **SNS**: Alert notifications
-
-### CI/CD Stack (Optional)
-- **CodePipeline**: GitHub integration
-- **CodeBuild**: Automated builds
+Replace `YOUR_VERIFIED_EMAIL` with the email you verified in Step 3.
 
 ---
 
-## Cost Breakdown (Light Usage)
+## Step 7: Trigger Test Ingestion
 
-- **DynamoDB**: $1-5/month (On-Demand)
-- **Lambda**: $0-2/month (Free tier: 1M requests)
-- **API Gateway**: $3.50/month (1M requests)
-- **S3**: $0.50/month (10GB)
-- **CloudFront**: $1/month (10GB transfer)
-- **Cognito**: Free (50,000 MAU)
-- **CloudWatch**: $3/month
+```bash
+bash test.sh ingestion
+```
 
-**Total: ~$10-15/month**
+This creates test insights for Keytruda and Opdivo.
+
+---
+
+## Step 8: Test Daily Digest
+
+```bash
+bash test.sh digest
+```
+
+Check your email for the digest.
+
+---
+
+## Step 9: Access Frontend
+
+```bash
+CLOUDFRONT_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontURL`].OutputValue' --output text)
+echo "Frontend: $CLOUDFRONT_URL"
+```
+
+**Login with:**
+- Email: `test@example.com`
+- Password: `Test123!`
+
+---
+
+## Testing
+
+### Test Cognito Configuration
+```bash
+bash test.sh cognito
+```
+
+### Test Full System
+```bash
+bash test.sh system
+```
+
+### Test API Endpoints
+```bash
+bash test.sh api
+```
 
 ---
 
 ## Troubleshooting
 
-### Bootstrap Issues
-```bash
-bash check-bootstrap.sh
-# If errors, ensure region is us-east-1
-export AWS_REGION=us-east-1
-```
+### Issue: Frontend shows 401 Unauthorized
 
-### Stack Failures
+**Solution:**
 ```bash
-bash fix-rollback.sh  # Delete failed stacks
-bash deploy.sh        # Redeploy
-```
-
-### Frontend 401 Errors
-```bash
-# Ensure user is confirmed
+# Confirm user
 aws cognito-idp admin-confirm-user \
   --user-pool-id $USER_POOL_ID \
   --username test@example.com
+
+# Or sign out and sign in again in the UI
 ```
 
-### CloudFront Cache Issues
+### Issue: No insights in UI
+
+**Solution:**
 ```bash
+# Trigger ingestion
+bash test.sh ingestion
+
+# Wait 15 seconds for processing
+sleep 15
+
+# Check insights table
+INSIGHTS_TABLE=$(aws dynamodb list-tables --query "TableNames[?contains(@,'Insights')]|[0]" --output text)
+aws dynamodb scan --table-name $INSIGHTS_TABLE --max-items 5
+
+# Check processor logs
+aws logs tail /aws/lambda/CIAlertStack-ProcessorFunction --since 10m
+```
+
+### Issue: No email digest received
+
+**Solution:**
+```bash
+# 1. Verify SES email
+bash setup-ses.sh
+
+# 2. Check email in UserSettings table
+SETTINGS_TABLE=$(aws dynamodb list-tables --query "TableNames[?contains(@,'UserSettings')]|[0]" --output text)
+aws dynamodb scan --table-name $SETTINGS_TABLE
+
+# 3. Test digest manually
+bash test.sh digest
+
+# 4. Check digest logs
+aws logs tail /aws/lambda/CIAlertStack-DigestFunction --since 10m
+```
+
+### Issue: Frontend not loading
+
+**Solution:**
+```bash
+# Invalidate CloudFront cache
 CLOUDFRONT_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue' --output text)
 aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_ID --paths "/*"
+
+# Wait 2-3 minutes for invalidation
+```
+
+### Issue: Bootstrap fails
+
+**Solution:**
+```bash
+# Ensure region is us-east-1
+export AWS_REGION=us-east-1
+aws configure set region us-east-1
+
+# Re-bootstrap
+cd infrastructure
+cdk bootstrap
+cd ..
+```
+
+---
+
+## Daily Operations
+
+### View Logs
+```bash
+# PubMed ingestion
+aws logs tail /aws/lambda/CIAlertStack-PubMedFunction --follow
+
+# Processor
+aws logs tail /aws/lambda/CIAlertStack-ProcessorFunction --follow
+
+# Digest
+aws logs tail /aws/lambda/CIAlertStack-DigestFunction --follow
+```
+
+### Check EventBridge Rules
+```bash
+# List all rules
+aws events list-rules
+
+# Check ingestion rule (midnight UTC)
+aws events describe-rule --name CIAlertStack-DailyIngestionRule
+
+# Check digest rule (9 AM UTC)
+aws events describe-rule --name CIAlertStack-DailyDigestRule
+```
+
+### Monitor CloudWatch Dashboard
+```bash
+# Get dashboard URL
+echo "https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:"
 ```
 
 ---
@@ -181,36 +291,57 @@ aws cloudformation wait stack-delete-complete --stack-name CIAlertStack
 
 ---
 
-## Features
+## Success Checklist
 
-✅ **Secure Authentication**: Cognito with email sign-in
-✅ **Protected API**: All endpoints require JWT token
-✅ **User Watchlists**: Per-user molecule tracking
-✅ **AI Insights**: Bedrock Claude 3 Sonnet processing
-✅ **Daily Alerts**: 9 AM email notifications
-✅ **Modern UI**: React with AWS Amplify
-✅ **Production Ready**: Monitoring, CI/CD, cost-optimized
-
----
-
-## Password Requirements
-
-- Minimum 8 characters
-- Uppercase letter
-- Lowercase letter
-- Number
-- Special character
-
-Example: `Test123!`
+- [ ] All 4 stacks deployed successfully
+- [ ] SES email verified
+- [ ] Frontend accessible via CloudFront URL
+- [ ] User can sign in with Cognito
+- [ ] Watchlist CRUD operations work
+- [ ] Insights visible in UI
+- [ ] Test email digest received
+- [ ] CloudWatch dashboard shows metrics
+- [ ] EventBridge rules active
 
 ---
 
 ## Next Steps
 
-1. Add more molecules to watchlist
-2. Configure email alerts (SES)
-3. Add more data sources (FDA, EMA, WIPO)
-4. Customize UI branding
-5. Set up custom domain
+1. **Add More Molecules** - Use the UI to add molecules to your watchlist
+2. **Customize Email Template** - Edit `lambdas/notifications/daily_digest.py`
+3. **Add Data Sources** - Integrate FDA, EMA, WIPO APIs
+4. **Custom Domain** - Set up Route53 and ACM certificate
+5. **Production Email** - Move SES out of sandbox mode
+6. **Monitoring Alerts** - Configure SNS for CloudWatch alarms
 
-See **COGNITO_SETUP.md** for detailed authentication guide.
+---
+
+## Cost Optimization Tips
+
+- Use S3 lifecycle policies for old data
+- Enable DynamoDB auto-scaling if needed
+- Use Lambda reserved concurrency for predictable costs
+- Set CloudWatch Logs retention to 7 days
+- Monitor with AWS Cost Explorer
+
+---
+
+## Security Best Practices
+
+- ✅ Rotate AWS credentials regularly
+- ✅ Enable MFA on AWS account
+- ✅ Use AWS Secrets Manager for sensitive data
+- ✅ Review IAM policies quarterly
+- ✅ Enable CloudTrail for audit logs
+- ✅ Use VPC endpoints for private connectivity
+
+---
+
+## Support
+
+For issues:
+1. Check logs: `aws logs tail /aws/lambda/FUNCTION_NAME --follow`
+2. Run system test: `bash test-system.sh`
+3. Review CloudWatch dashboard
+4. Check this troubleshooting section
+5. Review [README.md](README.md) for architecture details
