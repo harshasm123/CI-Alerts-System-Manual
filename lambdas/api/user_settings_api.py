@@ -66,7 +66,7 @@ def get_user_settings(user_id):
     """
     try:
         response = user_settings_table.get_item(
-            Key={'user_id': user_id}
+            Key={'userId': user_id}
         )
         
         if 'Item' in response:
@@ -99,7 +99,7 @@ def update_user_settings(user_id, event):
         # Get current settings or defaults
         try:
             current_response = user_settings_table.get_item(
-                Key={'user_id': user_id}
+                Key={'userId': user_id}
             )
             current_settings = current_response.get('Item', get_default_settings(user_id))
         except Exception:
@@ -208,7 +208,7 @@ def get_default_settings(user_id):
     Get default user settings
     """
     return {
-        'user_id': user_id,
+        'userId': user_id,
         'email': '',
         'alert_time': '09:00',
         'timezone': 'UTC',

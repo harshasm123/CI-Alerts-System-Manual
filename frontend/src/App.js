@@ -109,7 +109,7 @@ function App() {
   const loadWatchlist = async () => {
     try {
       const token = await getAuthToken();
-      const res = await fetch(`${API_URL}watchlist?userId=${user.username}`, {
+      const res = await fetch(`${API_URL}watchlist`, {
         headers: { Authorization: token }
       });
       if (!res.ok) throw new Error('Failed to load watchlist');
@@ -197,7 +197,7 @@ function App() {
       const res = await fetch(`${API_URL}watchlist`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: token },
-        body: JSON.stringify({ userId: user.username, molecule: newMolecule })
+        body: JSON.stringify({ molecule: newMolecule })
       });
       if (!res.ok) {
         const errData = await res.json();
@@ -214,7 +214,7 @@ function App() {
   const removeMolecule = async (molecule) => {
     try {
       const token = await getAuthToken();
-      await fetch(`${API_URL}watchlist?userId=${user.username}&molecule=${molecule}`, {
+      await fetch(`${API_URL}watchlist?molecule=${encodeURIComponent(molecule)}`, {
         method: 'DELETE',
         headers: { Authorization: token }
       });

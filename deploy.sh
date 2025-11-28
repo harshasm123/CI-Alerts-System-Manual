@@ -275,3 +275,13 @@ if [ "$SKIP_CICD" = true ]; then
 else
     echo "✅ All 5 stacks deployed successfully!"
 fi
+
+# Step 9: Deploy frontend application
+echo ""
+echo "🎨 Deploying frontend application..."
+if [ -d "frontend" ] && [ -f "shell scripts/deploy-cognito-frontend.sh" ]; then
+    bash "shell scripts/deploy-cognito-frontend.sh"
+else
+    echo "⚠️  Frontend directory or deployment script not found"
+    echo "   To deploy frontend later, run: bash 'shell scripts/deploy-cognito-frontend.sh'"
+fi

@@ -42,12 +42,23 @@ fi
 
 # Create .env file
 cd "$PROJECT_ROOT/frontend"
+
+# Ensure API_URL ends with a slash
+if [[ ! "$API_URL" =~ /$ ]]; then
+    API_URL="${API_URL}/"
+fi
+
 cat > .env << EOF
 REACT_APP_API_URL=$API_URL
 REACT_APP_USER_POOL_ID=$USER_POOL_ID
 REACT_APP_USER_POOL_CLIENT_ID=$USER_POOL_CLIENT_ID
 REACT_APP_REGION=$REGION
 EOF
+
+echo "✅ Created .env file with configuration"
+echo "   API_URL: $API_URL"
+echo "   USER_POOL_ID: $USER_POOL_ID"
+echo "   REGION: $REGION"
 
 echo "📦 Installing dependencies..."
 npm install
@@ -78,6 +89,6 @@ echo "📝 To create a test user:"
 echo "   aws cognito-idp sign-up --client-id $USER_POOL_CLIENT_ID --username test@example.com --password Test123!"
 echo ""
 echo "📝 To confirm user (if auto-verify fails):"
-echo "   aws cognito-idp admin-confirm-user --user-pool-id $USER_POOL_ID --username test@example.com"
+echo "   aws cognito-idp admin-confirm-user --user-pool-id $USER_POOL_ID --username test@example.com --region $REGION"
 echo ""
 echo "🔗 Open your browser to: $WEBSITE_URL"
