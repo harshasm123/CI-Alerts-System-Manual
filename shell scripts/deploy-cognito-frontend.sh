@@ -9,11 +9,12 @@ USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --qu
 USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text)
 REGION=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`Region`].OutputValue' --output text)
 BUCKET=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`BucketName`].OutputValue' --output text)
-CLOUDFRONT=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue' --output text)
+WEBSITE_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`WebsiteURL`].OutputValue' --output text 2>/dev/null || echo "")
 
 echo "✅ API URL: $API_URL"
 echo "✅ User Pool: $USER_POOL_ID"
 echo "✅ Region: $REGION"
+echo "✅ S3 Bucket: $BUCKET"
 
 # Create .env file
 cd frontend
