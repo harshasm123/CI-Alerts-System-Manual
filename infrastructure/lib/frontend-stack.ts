@@ -1,22 +1,19 @@
 import * as cdk from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
-import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
-import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as path from 'path';
 import { Construct } from 'constructs';
 
 export class FrontendStack extends cdk.Stack {
-  public readonly distributionUrl: string;
   public readonly bucketUrl: string;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // S3 Bucket for static website hosting (no VPC needed)
+    // S3 Bucket for static website hosting (NO CloudFront - simpler, no verification needed)
     const websiteBucket = new s3.Bucket(this, 'WebsiteBucket', {
       websiteIndexDocument: 'index.html',
-      websiteErrorDocument: 'error.html',
+      websiteErrorDocument: 'index.html', // SPA routing fallback
       publicReadAccess: true,
       blockPublicAccess: new s3.BlockPublicAccess({
         blockPublicAcls: false,
@@ -26,19 +23,18 @@ export class FrontendStack extends cdk.Stack {
       }),
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
+      cors: [
+        {
+          allowedMethods: [
+            s3.HttpMethods.GET,
+            s3.HttpMethods.HEAD,
+          ],
+          allowedOrigins: ['*'],
+          allowedHeaders: ['*'],
+        },
+      ],
     });
 
-    // CloudFront Distribution (no VPC/ALB needed)
-    const distribution = new cloudfront.Distribution(this, 'Distribution', {
-      defaultBehavior: {
-        origin: new origins.S3Origin(websiteBucket),
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-      },
-      defaultRootObject: 'index.html',
-    });
-
-    this.distributionUrl = distribution.distributionDomainName;
     this.bucketUrl = websiteBucket.bucketWebsiteUrl;
 
     // Deploy frontend files (if they exist)
@@ -47,8 +43,6 @@ export class FrontendStack extends cdk.Stack {
       new s3deploy.BucketDeployment(this, 'DeployFrontend', {
         sources: [s3deploy.Source.asset(frontendPath)],
         destinationBucket: websiteBucket,
-        distribution,
-        distributionPaths: ['/*'],
       });
     } catch (error) {
       // Frontend build doesn't exist yet - that's okay
@@ -56,24 +50,16 @@ export class FrontendStack extends cdk.Stack {
     }
 
     // Outputs
-    new cdk.CfnOutput(this, 'CloudFrontURL', {
-      value: `https://${distribution.distributionDomainName}`,
-      description: 'CloudFront Distribution URL',
-    });
-
-    new cdk.CfnOutput(this, 'S3WebsiteURL', {
+    new cdk.CfnOutput(this, 'WebsiteURL', {
       value: websiteBucket.bucketWebsiteUrl,
-      description: 'S3 Website URL',
+      description: 'S3 Static Website URL (HTTP)',
+      exportName: 'CIAlert-WebsiteURL',
     });
 
     new cdk.CfnOutput(this, 'BucketName', {
       value: websiteBucket.bucketName,
       description: 'S3 Bucket Name',
-    });
-
-    new cdk.CfnOutput(this, 'DistributionId', {
-      value: distribution.distributionId,
-      description: 'CloudFront Distribution ID',
+      exportName: 'CIAlert-BucketName',
     });
   }
 }
