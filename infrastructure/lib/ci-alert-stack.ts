@@ -95,7 +95,7 @@ export class CIAlertStack extends cdk.Stack {
     eventQueue.grantConsumeMessages(lambdaRole);
 
     lambdaRole.addToPolicy(new iam.PolicyStatement({
-      actions: ['bedrock:InvokeModel'],
+      actions: ['bedrock:InvokeModel', 'bedrock-agent-runtime:InvokeAgent'],
       resources: ['*'],
     }));
 
@@ -180,6 +180,18 @@ export class CIAlertStack extends cdk.Stack {
       },
     });
 
+    const agentFunction = new lambda.Function(this, 'AgentFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'agent_api.lambda_handler',
+      code: lambda.Code.fromAsset('../lambdas/api'),
+      timeout: cdk.Duration.seconds(60),
+      role: lambdaRole,
+      environment: {
+        AGENT_ID: process.env.AGENT_ID || 'placeholder',
+        AGENT_ALIAS_ID: process.env.AGENT_ALIAS_ID || 'TSTALIASID',
+      },
+    });
+
     // API Gateway
     const api = new apigateway.RestApi(this, 'CIAlertAPI', {
       restApiName: 'CI Alert API',
@@ -221,6 +233,12 @@ export class CIAlertStack extends cdk.Stack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
     userSettingsResource.addMethod('PUT', new apigateway.LambdaIntegration(userSettingsFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    const agentResource = api.root.addResource('agent');
+    agentResource.addMethod('POST', new apigateway.LambdaIntegration(agentFunction), {
       authorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });

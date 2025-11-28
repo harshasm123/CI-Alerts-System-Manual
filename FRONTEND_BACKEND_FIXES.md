@@ -2,7 +2,12 @@
 
 ## Issues Fixed
 
-### 1. **API URL Configuration**
+### 1. **Missing Agent API Endpoint**
+- **Problem**: AI Assistant was calling `/agent` endpoint that didn't exist in API Gateway
+- **Fix**: Added agent Lambda function and `/agent` POST endpoint to CI Alert stack
+- **Impact**: AI Assistant can now connect to Bedrock Agent
+
+### 2. **API URL Configuration**
 - **Problem**: Frontend .env had placeholder values
 - **Fix**: Updated `deploy-cognito-frontend.sh` to properly inject real API URL from CloudFormation outputs
 - **Impact**: Frontend can now connect to backend API
@@ -34,6 +39,12 @@
   - Changed `user_id` to `userId` in DynamoDB operations
   - Fixed key consistency across all functions
 
+### Infrastructure (CDK)
+- `infrastructure/lib/ci-alert-stack.ts`
+  - Added agent Lambda function with Bedrock permissions
+  - Added `/agent` POST endpoint to API Gateway
+  - Added `bedrock-agent-runtime:InvokeAgent` permission to Lambda role
+
 ### Frontend
 - `frontend/src/App.js`
   - Removed `/v1/` prefix from API URLs
@@ -51,16 +62,25 @@
 
 ## How to Apply Fixes
 
-Run the redeploy script:
-
+### Option 1: Full Deployment (Recommended)
 ```bash
-bash redeploy-fixes.sh
+bash deploy.sh
+```
+
+### Option 2: Quick Update (Infrastructure + Frontend)
+```bash
+cd infrastructure
+npm run build
+cdk deploy CIAlertStack --require-approval never
+cd ..
+bash "shell scripts/deploy-cognito-frontend.sh"
 ```
 
 This will:
-1. Rebuild and redeploy Lambda functions
-2. Rebuild and redeploy frontend with correct configuration
-3. Upload updated frontend to S3
+1. Rebuild and redeploy Lambda functions with fixes
+2. Add the missing `/agent` endpoint
+3. Rebuild and redeploy frontend with correct configuration
+4. Upload updated frontend to S3
 
 ## Testing After Deployment
 
@@ -77,6 +97,12 @@ This will:
    - Refresh page to verify settings persist
 5. **Test Insights**:
    - Should load without errors (may be empty initially)
+   - To populate insights, run: `bash trigger-ingestion.sh`
+   - Wait 2-3 minutes, then refresh the Insights tab
+6. **Test AI Assistant**:
+   - Click on "AI Assistant" tab
+   - Type a question about molecules
+   - Should get a response (requires Bedrock Agent to be deployed and prepared)
 
 ## Troubleshooting
 
@@ -113,6 +139,7 @@ Endpoints:
 - `GET /insights?molecule=name` - Get insights for specific molecule
 - `GET /user-settings` - Get user settings
 - `PUT /user-settings` - Update settings
+- `POST /agent` - Chat with AI assistant (body: `{"query": "question", "sessionId": "optional"}`)
 
 All requests require `Authorization` header with JWT token from Cognito.
 
