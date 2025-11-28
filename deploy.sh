@@ -281,7 +281,13 @@ echo ""
 echo "🎨 Deploying frontend application..."
 if [ -d "frontend" ] && [ -f "shell scripts/deploy-cognito-frontend.sh" ]; then
     bash "shell scripts/deploy-cognito-frontend.sh"
+    echo ""
+    echo "✅ Frontend deployed successfully!"
 else
     echo "⚠️  Frontend directory or deployment script not found"
     echo "   To deploy frontend later, run: bash 'shell scripts/deploy-cognito-frontend.sh'"
 fi
+
+echo ""
+echo "🎉 Complete deployment finished!"
+echo "   Open your website URL and test all features"

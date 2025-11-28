@@ -11,7 +11,7 @@ AGENT_ALIAS_ID = os.environ['AGENT_ALIAS_ID']
 def lambda_handler(event, context):
     body = json.loads(event.get('body', '{}'))
     query = body.get('query', '')
-    session_id = body.get('sessionId', str(uuid.uuid4()))
+    session_id = body.get('sessionId') or str(uuid.uuid4())
     
     if not query:
         return {
@@ -27,7 +27,7 @@ def lambda_handler(event, context):
         response = bedrock_agent_runtime.invoke_agent(
             agentId=AGENT_ID,
             agentAliasId=AGENT_ALIAS_ID,
-            sessionId=session_id,
+            sessionId=str(session_id),
             inputText=query
         )
         
