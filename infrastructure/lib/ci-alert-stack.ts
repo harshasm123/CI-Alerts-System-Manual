@@ -8,6 +8,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { Construct } from 'constructs';
 
 export class CIAlertStack extends cdk.Stack {
@@ -225,7 +226,7 @@ export class CIAlertStack extends cdk.Stack {
     });
 
     // SQS Event Source for Processor Lambda
-    processorFunction.addEventSource(new lambda.eventSources.SqsEventSource(eventQueue, {
+    processorFunction.addEventSource(new SqsEventSource(eventQueue, {
       batchSize: 10,
       maxBatchingWindow: cdk.Duration.seconds(5),
     }));

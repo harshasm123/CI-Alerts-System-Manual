@@ -68,112 +68,15 @@ Your role:
 - Provide strategic recommendations
 - Answer questions about molecules and insights
 
-Available actions:
-- query_insights: Get insights for a specific molecule
-- analyze_trends: Analyze sentiment trends over time
-- compare_molecules: Compare two molecules
-
 Be concise, data-driven, and highlight high-impact events.`,
       idleSessionTtlInSeconds: 600,
     });
-
-    // Action Group
-    const actionGroup = new bedrock.CfnAgentActionGroup(this, 'ActionGroup', {
-      agentId: agent.attrAgentId,
-      agentVersion: 'DRAFT',
-      actionGroupName: 'ci-alert-actions',
-      actionGroupExecutor: {
-        lambda: actionLambda.functionArn,
-      },
-      actionGroupState: 'ENABLED',
-      apiSchema: {
-        payload: JSON.stringify({
-          openapi: '3.0.0',
-          info: {
-            title: 'CI Alert Actions',
-            version: '1.0.0',
-          },
-          paths: {
-            '/query-insights': {
-              post: {
-                description: 'Query insights for a specific molecule',
-                operationId: 'queryInsights',
-                requestBody: {
-                  required: true,
-                  content: {
-                    'application/json': {
-                      schema: {
-                        type: 'object',
-                        properties: {
-                          molecule: { type: 'string' },
-                          limit: { type: 'integer', default: 10 },
-                        },
-                        required: ['molecule'],
-                      },
-                    },
-                  },
-                },
-              },
-            },
-            '/analyze-trends': {
-              post: {
-                description: 'Analyze sentiment trends for a molecule',
-                operationId: 'analyzeTrends',
-                requestBody: {
-                  required: true,
-                  content: {
-                    'application/json': {
-                      schema: {
-                        type: 'object',
-                        properties: {
-                          molecule: { type: 'string' },
-                          days: { type: 'integer', default: 30 },
-                        },
-                        required: ['molecule'],
-                      },
-                    },
-                  },
-                },
-              },
-            },
-            '/compare-molecules': {
-              post: {
-                description: 'Compare two molecules',
-                operationId: 'compareMolecules',
-                requestBody: {
-                  required: true,
-                  content: {
-                    'application/json': {
-                      schema: {
-                        type: 'object',
-                        properties: {
-                          molecule1: { type: 'string' },
-                          molecule2: { type: 'string' },
-                        },
-                        required: ['molecule1', 'molecule2'],
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        }),
-      },
-    });
-
-    // Prepare Agent
-    const agentPrepare = new bedrock.CfnAgent(this, 'AgentPrepare', {
-      agentId: agent.attrAgentId,
-    });
-    agentPrepare.node.addDependency(actionGroup);
 
     // Agent Alias
     const agentAlias = new bedrock.CfnAgentAlias(this, 'AgentAlias', {
       agentId: agent.attrAgentId,
       agentAliasName: 'production',
     });
-    agentAlias.node.addDependency(agentPrepare);
 
     this.agentId = agent.attrAgentId;
     this.agentAliasId = agentAlias.attrAgentAliasId;
