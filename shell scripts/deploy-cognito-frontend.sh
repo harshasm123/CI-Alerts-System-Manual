@@ -16,9 +16,29 @@ echo "✅ User Pool: $USER_POOL_ID"
 echo "✅ Region: $REGION"
 echo "✅ S3 Bucket: $BUCKET"
 
-# Get script directory and navigate to project root
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+# Determine project root (handle both direct execution and from shell scripts dir)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -d "$SCRIPT_DIR/../frontend" ]; then
+    # Script is in a subdirectory (shell scripts/)
+    PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+elif [ -d "$SCRIPT_DIR/frontend" ]; then
+    # Script is in project root
+    PROJECT_ROOT="$SCRIPT_DIR"
+else
+    echo "❌ Error: Cannot find frontend directory"
+    echo "   Looked in: $SCRIPT_DIR/frontend and $SCRIPT_DIR/../frontend"
+    echo "   Current directory: $(pwd)"
+    echo "   Script directory: $SCRIPT_DIR"
+    exit 1
+fi
+
+echo "📁 Project root: $PROJECT_ROOT"
+
+# Check if frontend directory exists
+if [ ! -d "$PROJECT_ROOT/frontend" ]; then
+    echo "❌ Error: Frontend directory not found at $PROJECT_ROOT/frontend"
+    exit 1
+fi
 
 # Create .env file
 cd "$PROJECT_ROOT/frontend"
