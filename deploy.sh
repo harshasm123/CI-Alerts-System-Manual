@@ -14,13 +14,15 @@ if [ -z "$REGION" ]; then
 fi
 
 # Check for problematic regions
-PROBLEMATIC_REGIONS=("us-west-2")
+PROBLEMATIC_REGIONS=("us-west-2" "eu-west-1" "ap-southeast-1")
 for prob_region in "${PROBLEMATIC_REGIONS[@]}"; do
     if [ "$REGION" = "$prob_region" ]; then
         echo "⚠️  $REGION has CloudFormation hooks blocking CDK"
+        echo "   This region has AWS::EarlyValidation::ResourceExistenceCheck enabled"
         REGION="us-east-1"
         aws configure set region $REGION
-        echo "✅ Switched to $REGION"
+        echo "✅ Automatically switched to $REGION"
+        echo "   If you need to use $prob_region, contact AWS administrator to disable the hook"
         break
     fi
 done

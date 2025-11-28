@@ -190,6 +190,17 @@ aws logs tail /aws/lambda/CIAlertStack-DigestFunction --follow
 
 ## Troubleshooting
 
+### CDK Bootstrap Fails (CloudFormation Hook Error)
+```bash
+# Quick fix - switch region
+chmod +x fix-region.sh
+./fix-region.sh
+
+# Then deploy again
+./deploy.sh
+```
+See `QUICK_FIX.md` for details.
+
 ### Frontend 401 Errors
 ```bash
 aws cognito-idp admin-confirm-user --user-pool-id $USER_POOL_ID --username test@example.com
