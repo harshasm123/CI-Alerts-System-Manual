@@ -16,8 +16,12 @@ echo "✅ User Pool: $USER_POOL_ID"
 echo "✅ Region: $REGION"
 echo "✅ S3 Bucket: $BUCKET"
 
+# Get script directory and navigate to project root
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+
 # Create .env file
-cd frontend
+cd "$PROJECT_ROOT/frontend"
 cat > .env << EOF
 REACT_APP_API_URL=$API_URL
 REACT_APP_USER_POOL_ID=$USER_POOL_ID
