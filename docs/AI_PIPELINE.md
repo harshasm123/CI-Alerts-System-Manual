@@ -2,14 +2,14 @@
 
 ## Overview
 
-The CI Alert System uses Amazon Bedrock with Claude 3 Sonnet for AI-powered pharmaceutical competitive intelligence analysis.
+The CI Alert System uses Amazon Bedrock with Amazon Nova Lite for AI-powered pharmaceutical competitive intelligence analysis.
 
 ---
 
 ## Architecture
 
 ```
-PubMed API → Lambda Ingestion → SQS Queue → Processor Lambda → Bedrock Claude → DynamoDB
+PubMed API → Lambda Ingestion → SQS Queue → Processor Lambda → Amazon Nova Lite → DynamoDB
                                                     ↓
                                             AI Analysis:
                                             - Sentiment
@@ -83,12 +83,12 @@ params = {
 
 **File:** `lambdas/processing/processor.py`
 
-**Purpose:** Analyzes pharmaceutical news with Bedrock Claude
+**Purpose:** Analyzes pharmaceutical news with Amazon Nova Lite
 
 **Process:**
 1. Receives messages from SQS
 2. Constructs AI prompt with molecule and content
-3. Calls Bedrock Claude 3 Sonnet
+3. Calls Amazon Nova Lite
 4. Parses AI response
 5. Stores insights in DynamoDB
 
@@ -97,9 +97,10 @@ params = {
 bedrock = boto3.client('bedrock-runtime')
 
 response = bedrock.invoke_model(
-    modelId='anthropic.claude-3-sonnet-20240229-v1:0',
+    modelId='us.amazon.nova-lite-v1:0',
     body=json.dumps({
-        'anthropic_version': 'bedrock-2023-05-31',
+        'messages': [{'role': 'user', 'content': [{'text': prompt}]}],
+        'inferenceConfig': {
         'max_tokens': 1000,
         'messages': [{'role': 'user', 'content': prompt}]
     })
@@ -165,9 +166,12 @@ Market analysts project $5B in annual sales by 2025.
 
 ## Model Selection
 
-### Why Claude 3 Sonnet?
+### Why Amazon Nova Lite?
 
 **Advantages:**
+- **Cost-effective:** $0.06/$0.24 per 1M tokens (60-75% cheaper than Claude)
+- **Fast:** Low latency for batch processing
+- **Accurate:** Excellent for pharmaceutical text analysis
 - **Context Window:** 200K tokens (handles long articles)
 - **Accuracy:** High precision for medical/scientific text
 - **Speed:** 2-3 seconds per analysis
@@ -175,8 +179,8 @@ Market analysts project $5B in annual sales by 2025.
 - **JSON Output:** Reliable structured responses
 
 **Alternatives Considered:**
-- Claude 3 Haiku: Faster but less accurate for complex analysis
-- Claude 3 Opus: More accurate but 5x more expensive
+- Amazon Nova Premier: More advanced but more expensive (for Bedrock Agent)
+- Claude models: More expensive, similar performance
 - GPT-4: Not available on Bedrock, higher latency
 
 ---
@@ -449,7 +453,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
 **Solution:** Check Lambda IAM permissions for DynamoDB write
 
 ### Issue: High latency (>10 seconds)
-**Solution:** Reduce max_tokens or use Claude Haiku
+**Solution:** Reduce maxTokens in inferenceConfig
 
 ### Issue: JSON parsing errors
 **Solution:** Add retry logic with prompt refinement

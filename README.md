@@ -42,7 +42,7 @@ User → CloudFront → S3 (React + Amplify)
          ↓
     DynamoDB Tables
 
-EventBridge (Midnight) → PubMed Ingestion → SQS → Processor → Bedrock Claude
+EventBridge (Midnight) → PubMed Ingestion → SQS → Processor → Amazon Nova Lite
 EventBridge (9 AM) → Digest Lambda → SES Email
 ```
 
@@ -51,7 +51,7 @@ EventBridge (9 AM) → Digest Lambda → SES Email
 ## Key Features
 
 ✅ **Secure Authentication** - Cognito with email sign-in, auto-verify  
-✅ **AI Insights** - Bedrock Claude 3 Sonnet for pharmaceutical analysis  
+✅ **AI Insights** - Amazon Nova Lite for pharmaceutical analysis  
 ✅ **Daily Digests** - 9 AM UTC email alerts via SES  
 ✅ **User Watchlists** - Per-user molecule tracking  
 ✅ **React UI** - Modern frontend with AWS Amplify  
@@ -76,7 +76,7 @@ EventBridge (9 AM) → Digest Lambda → SES Email
 
 ### Lambda Functions
 - **PubMedFunction** - Fetches pharmaceutical news from PubMed API
-- **ProcessorFunction** - AI processing with Bedrock Claude
+- **ProcessorFunction** - AI processing with Amazon Nova Lite
 - **WatchlistFunction** - Watchlist CRUD API
 - **InsightsFunction** - Insights query API
 - **DigestFunction** - Daily email sender (9 AM UTC)
@@ -244,7 +244,7 @@ CI Alert System/
 │   │   └── cicd-stack.ts           # CodePipeline
 │   └── bin/ci-alert.ts
 ├── lambdas/
-│   ├── processing/processor.py     # Bedrock Claude integration
+│   ├── processing/processor.py     # Amazon Nova Lite integration
 │   ├── ingestion/pubmed_ingestion.py
 │   ├── api/
 │   │   ├── watchlist_api.py

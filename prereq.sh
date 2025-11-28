@@ -107,7 +107,7 @@ fi
 
 echo "⚠️  IMPORTANT: Enable Bedrock models manually"
 echo "   1. Go to AWS Console > Bedrock > Model Access"
-echo "   2. Request access to: Claude 3 Sonnet and Titan Embeddings"
+echo "   2. Request access to: Amazon Nova Premier and Amazon Nova Lite"
 echo "   3. Wait for approval (usually instant for standard models)"
 
 echo "✅ Prerequisites setup complete!"

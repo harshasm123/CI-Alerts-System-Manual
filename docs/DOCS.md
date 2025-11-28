@@ -118,7 +118,7 @@ CI-Alert-System/
 - `infrastructure/bin/ci-alert.ts` - CDK app entry point
 
 ### Lambda Functions
-- `lambdas/processing/processor.py` - Bedrock Claude integration
+- `lambdas/processing/processor.py` - Amazon Nova Lite integration
 - `lambdas/ingestion/pubmed_ingestion.py` - PubMed API integration
 - `lambdas/api/watchlist_api.py` - Watchlist CRUD API
 - `lambdas/api/insights_api.py` - Insights query API

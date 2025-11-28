@@ -233,7 +233,7 @@ echo "  # Trigger ingestion"
 echo "  aws lambda invoke --function-name CIAlertStack-PubMedFunction --region $REGION response.json"
 echo ""
 echo "📝 Next Steps:"
-echo "1. Enable Bedrock models: AWS Console → Bedrock → Model Access → Enable Claude 3.5 Sonnet v2 + Claude 3.5 Haiku"
+echo "1. Enable Bedrock models: AWS Console → Bedrock → Model Access → Enable Amazon Nova Premier + Amazon Nova Lite"
 echo "2. Deploy frontend: bash deploy-cognito-frontend.sh"
 echo "3. Create test user (see QUICKSTART.md)"
 if [ "$SKIP_CICD" = true ]; then

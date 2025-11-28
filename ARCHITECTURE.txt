@@ -58,12 +58,12 @@
 │  ┌───────────────────────────────────────────────────────────────────────────────┐ │
 │  │                      AWS Bedrock (AI Models)                                  │ │
 │  │  ┌─────────────────────────────────────────────────────────────────────────┐ │ │
-│  │  │  Claude 3.5 Haiku (Batch Processing)                                    │ │ │
-│  │  │  • Cost-effective: $0.25/$1.25 per 1M tokens                            │ │ │
+│  │  │  Amazon Nova Lite (Batch Processing)                                    │ │ │
+│  │  │  • Cost-effective: $0.06/$0.24 per 1M tokens                            │ │ │
 │  │  │  • Sentiment analysis & summarization                                   │ │ │
 │  │  └─────────────────────────────────────────────────────────────────────────┘ │ │
 │  │  ┌─────────────────────────────────────────────────────────────────────────┐ │ │
-│  │  │  Bedrock Agent (Claude 3.5 Sonnet v2)                                   │ │ │
+│  │  │  Bedrock Agent (Amazon Nova Premier)                                    │ │ │
 │  │  │  • Advanced analysis & strategic insights                               │ │ │
 │  │  │  • Query insights, analyze trends, compare molecules                    │ │ │
 │  │  └─────────────────────────────────────────────────────────────────────────┘ │ │
@@ -160,7 +160,7 @@
 ║                              KEY FEATURES                                            ║
 ╠══════════════════════════════════════════════════════════════════════════════════════╣
 ║  ✓ Secure Authentication (Cognito JWT)                                              ║
-║  ✓ AI-Powered Insights (Bedrock Claude 3.5 Haiku/Sonnet)                            ║
+║  ✓ AI-Powered Insights (Amazon Nova Lite/Premier)                                   ║
 ║  ✓ Daily Email Digests (9 AM UTC via SES)                                           ║
 ║  ✓ User Molecule Watchlists (DynamoDB)                                              ║
 ║  ✓ Multi-Source Ingestion (PubMed, FDA, EMA, ClinicalTrials, WIPO)                  ║
@@ -174,7 +174,7 @@
 ╠══════════════════════════════════════════════════════════════════════════════════════╣
 ║  1. EventBridge triggers ingestion Lambdas at midnight UTC                           ║
 ║  2. Ingestion Lambdas fetch data from external APIs → SQS Queue                      ║
-║  3. Processor Lambda consumes SQS messages → Bedrock Claude analysis                 ║
+║  3. Processor Lambda consumes SQS messages → Amazon Nova Lite analysis               ║
 ║  4. AI-generated insights stored in DynamoDB InsightsTable                           ║
 ║  5. EventBridge triggers Digest Lambda at 9 AM UTC                                   ║
 ║  6. Digest Lambda queries user watchlists → generates personalized emails            ║

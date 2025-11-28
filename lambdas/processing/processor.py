@@ -31,13 +31,13 @@ def lambda_handler(event, context):
             content = message['content']
             source = message.get('source', 'Unknown')
             
-            # Generate insights using Amazon Nova Pro
+            # Generate insights using Amazon Nova Lite
             prompt = PROMPT_TEMPLATE.format(molecule=molecule, content=content)
             
-            # Use Amazon Nova Pro for cost-effective batch processing
-            # Nova Pro: $0.80/$3.20 per 1M tokens with 300K context window
+            # Use Amazon Nova Lite for cost-effective batch processing
+            # Nova Lite: $0.06/$0.24 per 1M tokens - fast and affordable
             response = bedrock.invoke_model(
-                modelId='amazon.nova-pro-v1:0',
+                modelId='us.amazon.nova-lite-v1:0',
                 body=json.dumps({
                     'messages': [{'role': 'user', 'content': [{'text': prompt}]}],
                     'inferenceConfig': {
@@ -48,7 +48,7 @@ def lambda_handler(event, context):
             )
             
             result = json.loads(response['body'].read())
-            insights = result['content'][0]['text']
+            insights = result['output']['message']['content'][0]['text']
             
             # Store in DynamoDB
             timestamp = datetime.utcnow().isoformat()
