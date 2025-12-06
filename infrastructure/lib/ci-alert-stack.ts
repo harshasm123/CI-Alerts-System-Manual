@@ -122,7 +122,15 @@ export class CIAlertStack extends cdk.Stack {
     const pubmedFunction = new lambda.Function(this, 'PubMedFunction', {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: 'pubmed_ingestion.lambda_handler',
-      code: lambda.Code.fromAsset('../lambdas/ingestion'),
+      code: lambda.Code.fromAsset('../lambdas/ingestion', {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+          command: [
+            'bash', '-c',
+            'pip install -r requirements.txt -t /asset-output && cp -au . /asset-output'
+          ],
+        },
+      }),
       timeout: cdk.Duration.seconds(60),
       role: lambdaRole,
       environment: {
