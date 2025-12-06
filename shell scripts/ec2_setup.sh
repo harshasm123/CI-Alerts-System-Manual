@@ -7,13 +7,6 @@ set -e
 
 echo "🚀 Setting up CI Alert System on EC2 Ubuntu"
 
-# Wait for any running apt processes to complete
-echo "⏳ Waiting for package manager to be available..."
-sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && echo "Waiting for other package managers to finish..." && sleep 30
-sudo killall apt apt-get >/dev/null 2>&1 || true
-sleep 5
-
-# Update system
 echo "📦 Updating system packages..."
 export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
