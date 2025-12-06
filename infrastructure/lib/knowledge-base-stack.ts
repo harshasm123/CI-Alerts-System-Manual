@@ -115,7 +115,7 @@ export class KnowledgeBaseStack extends cdk.Stack {
             new iam.PolicyStatement({
               effect: iam.Effect.ALLOW,
               actions: ['bedrock:InvokeModel'],
-              resources: ['arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v1']
+              resources: [`arn:aws:bedrock:${this.region}::foundation-model/amazon.titan-embed-text-v1`]
             })
           ]
         })
@@ -130,7 +130,7 @@ export class KnowledgeBaseStack extends cdk.Stack {
       knowledgeBaseConfiguration: {
         type: 'VECTOR',
         vectorKnowledgeBaseConfiguration: {
-          embeddingModelArn: 'arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v1'
+          embeddingModelArn: `arn:aws:bedrock:${this.region}::foundation-model/amazon.titan-embed-text-v1`
         }
       },
       storageConfiguration: {
