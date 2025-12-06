@@ -25,56 +25,65 @@ export class KnowledgeBaseStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
-    // OpenSearch Serverless collection for vector storage
-    const vectorCollection = new opensearch.CfnCollection(this, 'VectorCollection', {
-      name: 'ci-alert-vectors',
-      type: 'VECTORSEARCH',
-      description: 'Vector collection for CI Alert knowledge base',
-    });
+    const collectionName = 'ci-alert-vectors';
 
-    // Network policy for OpenSearch Serverless
-    new opensearch.CfnSecurityPolicy(this, 'NetworkPolicy', {
-      name: 'ci-alert-network-policy',
-      type: 'network',
-      policy: JSON.stringify([{
-        Rules: [{
-          Resource: [`collection/${vectorCollection.name}`],
-          ResourceType: 'collection'
-        }],
-        AllowFromPublic: true
-      }])
-    });
-
-    // Encryption policy for OpenSearch Serverless
-    new opensearch.CfnSecurityPolicy(this, 'EncryptionPolicy', {
+    // Encryption policy for OpenSearch Serverless (must be created first)
+    const encryptionPolicy = new opensearch.CfnSecurityPolicy(this, 'EncryptionPolicy', {
       name: 'ci-alert-encryption-policy',
       type: 'encryption',
       policy: JSON.stringify({
         Rules: [{
-          Resource: [`collection/${vectorCollection.name}`],
+          Resource: [`collection/${collectionName}`],
           ResourceType: 'collection'
         }],
         AWSOwnedKey: true
       })
     });
 
+    // Network policy for OpenSearch Serverless
+    const networkPolicy = new opensearch.CfnSecurityPolicy(this, 'NetworkPolicy', {
+      name: 'ci-alert-network-policy',
+      type: 'network',
+      policy: JSON.stringify([{
+        Rules: [{
+          Resource: [`collection/${collectionName}`],
+          ResourceType: 'collection'
+        }],
+        AllowFromPublic: true
+      }])
+    });
+
+    // OpenSearch Serverless collection for vector storage
+    const vectorCollection = new opensearch.CfnCollection(this, 'VectorCollection', {
+      name: collectionName,
+      type: 'VECTORSEARCH',
+      description: 'Vector collection for CI Alert knowledge base',
+    });
+    
+    // Collection depends on policies
+    vectorCollection.addDependency(encryptionPolicy);
+    vectorCollection.addDependency(networkPolicy);
+
     // Data access policy for OpenSearch Serverless
-    new opensearch.CfnAccessPolicy(this, 'DataAccessPolicy', {
+    const dataAccessPolicy = new opensearch.CfnAccessPolicy(this, 'DataAccessPolicy', {
       name: 'ci-alert-data-policy',
       type: 'data',
       policy: JSON.stringify([{
         Rules: [{
-          Resource: [`collection/${vectorCollection.name}`],
+          Resource: [`collection/${collectionName}`],
           Permission: ['aoss:CreateCollectionItems', 'aoss:DeleteCollectionItems', 'aoss:UpdateCollectionItems', 'aoss:DescribeCollectionItems'],
           ResourceType: 'collection'
         }, {
-          Resource: [`index/${vectorCollection.name}/*`],
+          Resource: [`index/${collectionName}/*`],
           Permission: ['aoss:CreateIndex', 'aoss:DeleteIndex', 'aoss:UpdateIndex', 'aoss:DescribeIndex', 'aoss:ReadDocument', 'aoss:WriteDocument'],
           ResourceType: 'index'
         }],
         Principal: [`arn:aws:iam::${this.account}:root`]
       }])
     });
+    
+    // Collection also depends on data access policy
+    vectorCollection.addDependency(dataAccessPolicy);
 
     // IAM role for Bedrock Knowledge Base
     const knowledgeBaseRole = new iam.Role(this, 'KnowledgeBaseRole', {
