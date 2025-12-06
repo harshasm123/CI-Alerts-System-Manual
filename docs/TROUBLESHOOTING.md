@@ -11,6 +11,7 @@ bash test.sh cognito    # Authentication
 bash test.sh ingestion  # Data ingestion
 bash test.sh digest     # Email alerts
 bash test.sh api        # API endpoints
+bash test.sh rag        # RAG knowledge base
 ```
 
 ---
@@ -215,15 +216,16 @@ cdk deploy CIAlertStack
 **Solution:**
 ```bash
 # Enable models in AWS Console
-# 1. Go to: https://console.aws.amazon.com/bedrock/
-# 2. Click "Model access" (left sidebar)
-# 3. Click "Manage model access"
-# 4. Enable: Anthropic Claude 3 Sonnet
-# 5. Click "Save changes"
+# 1. Go to: https://console.aws.amazon.com/bedrock/home#/modelaccess
+# 2. Click "Manage model access"
+# 3. Enable: Claude 3.5 Sonnet v2
+# 4. Enable: Claude 3.5 Haiku
+# 5. Enable: Titan Text Embeddings v1
+# 6. Click "Save changes" and wait for "Access granted"
 
 # Verify access
 aws bedrock list-foundation-models --region us-east-1 \
-  --query 'modelSummaries[?contains(modelId, `claude-3-sonnet`)].modelId'
+  --query 'modelSummaries[?contains(modelId, `claude-3-5`)].modelId'
 
 # Test processor again
 bash test.sh ingestion
@@ -447,7 +449,87 @@ aws cloudwatch get-metric-statistics \
 
 ---
 
-### 9. Monitoring and Debugging
+### 9. RAG Knowledge Base Issues
+
+#### Issue: Knowledge base search returns no results
+**Cause:** Documents not uploaded or ingestion job failed
+
+**Solution:**
+```bash
+# Check knowledge base status
+KB_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-KnowledgeBase --query 'Stacks[0].Outputs[?OutputKey==`KnowledgeBaseId`].OutputValue' --output text)
+aws bedrock-agent get-knowledge-base --knowledge-base-id $KB_ID
+
+# Check ingestion jobs
+aws bedrock-agent list-ingestion-jobs --knowledge-base-id $KB_ID
+
+# Upload sample data if needed
+bash upload-sample-data.sh
+
+# Test search
+bash test.sh rag
+```
+
+#### Issue: Agent preparation fails
+**Cause:** Agent not properly configured or knowledge base not connected
+
+**Solution:**
+```bash
+# Get agent ID
+AGENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-BedrockAgent --query 'Stacks[0].Outputs[?OutputKey==`AgentIdOutput`].OutputValue' --output text)
+
+# Check agent status
+aws bedrock-agent get-agent --agent-id $AGENT_ID
+
+# Prepare agent
+aws bedrock-agent prepare-agent --agent-id $AGENT_ID
+
+# Connect knowledge base
+bash connect-knowledge-base.sh
+```
+
+#### Issue: OpenSearch Serverless collection not accessible
+**Cause:** Security policies not configured correctly
+
+**Solution:**
+```bash
+# Check collection status
+aws opensearchserverless list-collections --collection-filters name=ci-alert-vectors
+
+# Check security policies
+aws opensearchserverless list-security-policies --type network
+aws opensearchserverless list-security-policies --type encryption
+aws opensearchserverless list-access-policies --type data
+
+# Redeploy knowledge base stack if needed
+cd infrastructure
+cdk deploy CIAlert-KnowledgeBase
+```
+
+#### Issue: Vector embeddings not generated
+**Cause:** Titan Embeddings model not enabled or ingestion failed
+
+**Solution:**
+```bash
+# Check Titan model access
+aws bedrock list-foundation-models --region us-east-1 \
+  --query 'modelSummaries[?contains(modelId, `titan-embed`)].modelId'
+
+# Check ingestion job logs
+aws bedrock-agent get-ingestion-job \
+  --knowledge-base-id $KB_ID \
+  --data-source-id $DS_ID \
+  --ingestion-job-id $JOB_ID
+
+# Restart ingestion if failed
+aws bedrock-agent start-ingestion-job \
+  --knowledge-base-id $KB_ID \
+  --data-source-id $DS_ID
+```
+
+---
+
+### 10. Monitoring and Debugging
 
 #### Issue: Can't find CloudWatch logs
 **Cause:** Log group not created or wrong name
@@ -535,15 +617,19 @@ aws logs tail /aws/apigateway/CIAlert --follow
 ```bash
 # Run full diagnostics
 bash test.sh system > diagnostics.txt 2>&1
+bash test.sh rag >> diagnostics.txt 2>&1
 
-# Get stack outputs
-aws cloudformation describe-stacks --stack-name CIAlertStack > stack-outputs.json
+# Get all stack outputs
+for stack in CIAlertStack CIAlert-KnowledgeBase CIAlert-BedrockAgent CIAlert-Frontend CIAlert-Monitoring; do
+  aws cloudformation describe-stacks --stack-name $stack > ${stack}-outputs.json 2>/dev/null || echo "Stack $stack not found"
+done
 
 # Get recent logs
 aws logs tail /aws/lambda/CIAlertStack-ProcessorFunction --since 1h > processor-logs.txt
+aws logs tail /aws/lambda/CIAlert-BedrockAgent-ActionLambda --since 1h > agent-logs.txt 2>/dev/null || echo "Agent logs not found"
 
 # Package for support
-tar -czf ci-alert-diagnostics.tar.gz diagnostics.txt stack-outputs.json processor-logs.txt
+tar -czf ci-alert-diagnostics.tar.gz diagnostics.txt *-outputs.json *-logs.txt
 ```
 
 ### Check AWS Service Health

@@ -107,3 +107,43 @@ def compare_molecules(properties):
         'molecule1': {'name': molecule1, 'count': len(response1.get('Items', []))},
         'molecule2': {'name': molecule2, 'count': len(response2.get('Items', []))}
     }
+
+def search_knowledge(properties):
+    query = properties.get('query', {}).get('value', '')
+    limit = int(properties.get('limit', {}).get('value', 5))
+    
+    if not query:
+        return {'error': 'Query parameter is required'}
+    
+    if not KNOWLEDGE_BASE_ID or KNOWLEDGE_BASE_ID == 'PLACEHOLDER':
+        return {'error': 'Knowledge base not configured'}
+    
+    try:
+        response = bedrock_agent.retrieve(
+            knowledgeBaseId=KNOWLEDGE_BASE_ID,
+            retrievalQuery={'text': query},
+            retrievalConfiguration={
+                'vectorSearchConfiguration': {
+                    'numberOfResults': limit,
+                    'overrideSearchType': 'HYBRID'
+                }
+            }
+        )
+        
+        results = []
+        for item in response.get('retrievalResults', []):
+            results.append({
+                'content': item['content']['text'],
+                'score': item['score'],
+                'source': item['location']['s3Location']['uri'] if 'location' in item else 'Unknown',
+                'metadata': item.get('metadata', {})
+            })
+        
+        return {
+            'query': query,
+            'results_count': len(results),
+            'results': results
+        }
+    
+    except Exception as e:
+        return {'error': f'Search failed: {str(e)}'}

@@ -95,22 +95,58 @@ case "$1" in
     echo "GET /insights:"
     curl -s "${API_URL}insights" | jq '.' || curl -s "${API_URL}insights"
     echo ""
+    echo "POST /watchlist:"
+    curl -s -X POST "${API_URL}watchlist" \
+      -H "Content-Type: application/json" \
+      -d '{"userId":"test@example.com","molecule":"Keytruda"}' | jq '.' || echo "Watchlist API test"
+    echo ""
+    ;;
+    
+  rag)
+    echo "📚 Testing RAG Knowledge Base..."
+    KB_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-KnowledgeBase --query 'Stacks[0].Outputs[?OutputKey==`KnowledgeBaseId`].OutputValue' --output text 2>/dev/null)
+    AGENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-BedrockAgent --query 'Stacks[0].Outputs[?OutputKey==`AgentIdOutput`].OutputValue' --output text 2>/dev/null)
+    
+    if [ -z "$KB_ID" ] || [ -z "$AGENT_ID" ]; then
+      echo "❌ Knowledge Base or Agent not deployed"
+      exit 1
+    fi
+    
+    echo "Knowledge Base ID: $KB_ID"
+    echo "Agent ID: $AGENT_ID"
+    echo ""
+    
+    echo "📝 Checking ingestion jobs:"
+    aws bedrock-agent list-ingestion-jobs --knowledge-base-id $KB_ID --query 'ingestionJobSummaries[0].{Status:status,StartedAt:startedAt}' --output table
+    echo ""
+    
+    echo "🤖 Testing agent status:"
+    aws bedrock-agent get-agent --agent-id $AGENT_ID --query 'agent.{AgentName:agentName,AgentStatus:agentStatus}' --output table
+    echo ""
+    
+    echo "🔍 Testing knowledge base search:"
+    aws bedrock-agent-runtime retrieve \
+      --knowledge-base-id $KB_ID \
+      --retrieval-query text="Keytruda FDA approval" \
+      --query 'retrievalResults[0].{Content:content.text,Score:score}' \
+      --output json 2>/dev/null || echo "Search test failed - may need documents uploaded"
     ;;
     
   *)
-    echo "Usage: bash test.sh [cognito|system|digest|ingestion|api]"
+    echo "Usage: bash test.sh [cognito|system|digest|ingestion|api|rag]"
     echo ""
     echo "Options:"
     echo "  cognito    - Test Cognito configuration and users"
     echo "  system     - Test full system (DynamoDB, Lambda)"
-    echo "  digest     - Test daily digest email"
+    echo "  digest     - Test daily digest email with AI summary"
     echo "  ingestion  - Trigger PubMed ingestion"
     echo "  api        - Test API endpoints"
+    echo "  rag        - Test RAG knowledge base and agent"
     echo ""
     echo "Examples:"
     echo "  bash test.sh cognito"
     echo "  bash test.sh system"
-    echo "  bash test.sh digest"
+    echo "  bash test.sh rag"
     exit 1
     ;;
 esac

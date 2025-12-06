@@ -14,27 +14,51 @@ def lambda_handler(event, context):
     
     try:
         if molecule:
-            # Get insights for specific molecule
-            response = table.query(
-                KeyConditionExpression=Key('molecule').eq(molecule),
-                ScanIndexForward=False,  # Sort by timestamp descending
-                Limit=limit
-            )
+            # Get insights for specific molecule using GSI1
+            try:
+                response = table.query(
+                    IndexName='GSI1',
+                    KeyConditionExpression=Key('GSI1PK').eq(molecule),
+                    ScanIndexForward=False,  # Sort by timestamp descending
+                    Limit=limit
+                )
+            except Exception as e:
+                print(f"GSI1 query failed, using scan: {str(e)}")
+                # Fallback to scan with filter
+                response = table.scan(
+                    FilterExpression=Key('molecule').eq(molecule),
+                    Limit=limit
+                )
         else:
             # Get recent insights across all molecules
-            response = table.scan(Limit=limit)
+            response = table.scan(
+                Limit=limit,
+                # Sort by timestamp if available
+                ScanIndexForward=False
+            )
         
         items = response.get('Items', [])
         
         # Format items for frontend
         formatted_items = []
         for item in items:
+            # Get the best available content
+            summary = item.get('insights', item.get('summary', item.get('raw_content', 'No summary available')))
+            if isinstance(summary, str) and len(summary) > 500:
+                summary = summary[:500] + '...'
+            
             formatted_items.append({
+                'id': item.get('insight_id', item.get('id', '')),
                 'molecule': item.get('molecule', ''),
                 'timestamp': item.get('timestamp', ''),
-                'summary': item.get('insights', item.get('raw_content', 'No summary available'))[:500],
-                'source': item.get('source', 'Unknown')
+                'summary': summary,
+                'source': item.get('source', 'Unknown'),
+                'impact_score': item.get('impact_score', 0),
+                'url': item.get('url', '')
             })
+        
+        # Sort by timestamp descending
+        formatted_items.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
         
         return {
             'statusCode': 200,

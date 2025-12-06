@@ -2,20 +2,23 @@
 
 ## Overview
 
-The CI Alert System uses Amazon Bedrock with Amazon Nova Lite for AI-powered pharmaceutical competitive intelligence analysis.
+The CI Alert System uses Amazon Bedrock with Claude 3.5 models and RAG knowledge base for AI-powered pharmaceutical competitive intelligence analysis.
 
 ---
 
 ## Architecture
 
 ```
-PubMed API → Lambda Ingestion → SQS Queue → Processor Lambda → Amazon Nova Lite → DynamoDB
+PubMed API → Lambda Ingestion → SQS Queue → Processor Lambda → Claude 3.5 Haiku → DynamoDB
                                                     ↓
-                                            AI Analysis:
-                                            - Sentiment
-                                            - Risks
+                                            AI Analysis + RAG:
+                                            - Sentiment Analysis
+                                            - Risk Assessment
                                             - Opportunities
                                             - Strategic Summary
+                                            - Knowledge Base Search
+
+User Chat → Bedrock Agent → Claude 3.5 Sonnet v2 + Knowledge Base → Cited Responses
 ```
 
 ---
@@ -96,14 +99,23 @@ params = {
 ```python
 bedrock = boto3.client('bedrock-runtime')
 
+# Batch processing with Claude 3.5 Haiku (cost-effective)
 response = bedrock.invoke_model(
-    modelId='us.amazon.nova-lite-v1:0',
+    modelId='anthropic.claude-3-5-haiku-20241022-v1:0',
     body=json.dumps({
-        'messages': [{'role': 'user', 'content': [{'text': prompt}]}],
-        'inferenceConfig': {
+        'anthropic_version': 'bedrock-2023-05-31',
         'max_tokens': 1000,
         'messages': [{'role': 'user', 'content': prompt}]
     })
+)
+
+# Interactive queries with Bedrock Agent (Claude 3.5 Sonnet v2)
+bedrock_agent = boto3.client('bedrock-agent-runtime')
+response = bedrock_agent.invoke_agent(
+    agentId=AGENT_ID,
+    agentAliasId=AGENT_ALIAS_ID,
+    sessionId=session_id,
+    inputText=user_query
 )
 ```
 
@@ -166,21 +178,30 @@ Market analysts project $5B in annual sales by 2025.
 
 ## Model Selection
 
-### Why Amazon Nova Lite?
+### Why Claude 3.5 Models?
 
-**Advantages:**
-- **Cost-effective:** $0.06/$0.24 per 1M tokens (60-75% cheaper than Claude)
+**Claude 3.5 Haiku (Batch Processing):**
+- **Cost-effective:** $0.25/$1.25 per 1M tokens (10x cheaper than Sonnet)
 - **Fast:** Low latency for batch processing
 - **Accurate:** Excellent for pharmaceutical text analysis
 - **Context Window:** 200K tokens (handles long articles)
-- **Accuracy:** High precision for medical/scientific text
-- **Speed:** 2-3 seconds per analysis
-- **Cost:** $3 per 1M input tokens, $15 per 1M output tokens
 - **JSON Output:** Reliable structured responses
 
+**Claude 3.5 Sonnet v2 (Interactive Agent):**
+- **Advanced Reasoning:** Superior for complex queries
+- **RAG Integration:** Works seamlessly with Knowledge Base
+- **Citations:** Provides source references
+- **Context Window:** 200K tokens
+- **Cost:** $3/$15 per 1M tokens
+
+**2-Model Architecture Benefits:**
+- **Cost Optimization:** Save $13.50/month vs single Sonnet
+- **Performance:** Right model for each use case
+- **Scalability:** Haiku handles high-volume processing
+
 **Alternatives Considered:**
-- Amazon Nova Premier: More advanced but more expensive (for Bedrock Agent)
-- Claude models: More expensive, similar performance
+- Single Claude 3.5 Sonnet: More expensive for batch processing
+- Amazon Nova models: Less mature, limited availability
 - GPT-4: Not available on Bedrock, higher latency
 
 ---
@@ -315,19 +336,43 @@ logger.error(f"Failed to process: {error}")
 - 1 analysis = 200 tokens output
 - 100 insights/day
 
-**Monthly Costs:**
+**Monthly Costs (100 insights/day, 100 agent queries/day):**
+
+**Batch Processing (Claude 3.5 Haiku):**
 ```
 Input:  100 insights/day × 30 days × 500 tokens = 1.5M tokens
-        1.5M × $3/1M = $4.50
+        1.5M × $0.25/1M = $0.375
 
 Output: 100 insights/day × 30 days × 200 tokens = 600K tokens
-        600K × $15/1M = $9.00
+        600K × $1.25/1M = $0.75
 
-Lambda: 100 invocations/day × 30 days × 5 seconds × $0.0000166667/GB-second
-        = $0.25 (with 512MB memory)
-
-Total:  $13.75/month
+Subtotal: $1.125/month
 ```
+
+**Interactive Agent (Claude 3.5 Sonnet v2):**
+```
+Input:  100 queries/day × 30 days × 1000 tokens = 3M tokens
+        3M × $3/1M = $9.00
+
+Output: 100 queries/day × 30 days × 500 tokens = 1.5M tokens
+        1.5M × $15/1M = $22.50
+
+Subtotal: $31.50/month
+```
+
+**RAG Components:**
+```
+Titan Embeddings: 1M tokens/month × $0.0001 = $0.10
+OpenSearch Serverless: 2 OCUs = $55/month
+Subtotal: $55.10/month
+```
+
+**Total AI Pipeline Cost: $87.73/month**
+
+**Cost Savings vs Single Model:**
+- All Sonnet v2: $120/month
+- 2-Model Approach: $87.73/month
+- **Savings: $32.27/month (27% reduction)**
 
 ### Cost Optimization Tips
 
@@ -341,17 +386,50 @@ Total:  $13.75/month
 
 ## Advanced Features
 
+### RAG Knowledge Base Integration
+
+**Current Implementation:** OpenSearch Serverless with Bedrock Knowledge Base
+
+```python
+# Upload documents to knowledge base
+def sync_documents_to_kb():
+    # Upload to S3 documents/ prefix
+    s3.upload_file('fda-approval.pdf', KB_BUCKET, 'documents/regulatory/fda-approval.pdf')
+    
+    # Trigger ingestion job
+    bedrock_agent.start_ingestion_job(
+        knowledgeBaseId=KB_ID,
+        dataSourceId=DS_ID
+    )
+
+# Search knowledge base via agent
+def search_knowledge_base(query):
+    response = bedrock_agent.invoke_agent(
+        agentId=AGENT_ID,
+        agentAliasId=AGENT_ALIAS_ID,
+        inputText=f"Search knowledge base: {query}"
+    )
+    return response
+```
+
 ### Multi-Source Aggregation
 
-**Future Enhancement:** Combine data from multiple sources
+**Enhanced with RAG:** Combine real-time data with historical knowledge
 
 ```python
 sources = ['PubMed', 'ClinicalTrials.gov', 'FDA', 'SEC']
 
 for source in sources:
+    # Fetch real-time data
     data = fetch_from_source(source, molecule)
-    insights = analyze_with_bedrock(data)
-    aggregate_insights(insights)
+    
+    # Analyze with context from knowledge base
+    context = search_knowledge_base(f"{molecule} historical data")
+    insights = analyze_with_context(data, context)
+    
+    # Store and update knowledge base
+    store_insights(insights)
+    update_knowledge_base(insights)
 ```
 
 ### Sentiment Trending
@@ -447,7 +525,23 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
 ## Troubleshooting
 
 ### Issue: Bedrock returns empty response
-**Solution:** Check model is enabled in AWS Console
+**Solution:** 
+- Check Claude 3.5 models enabled in AWS Console → Bedrock → Model Access
+- Verify region supports Claude 3.5 models (us-east-1, us-west-2)
+- Check IAM permissions for bedrock:InvokeModel
+
+### Issue: Knowledge Base search returns no results
+**Solution:**
+- Verify documents uploaded to S3 documents/ prefix
+- Check ingestion job status: `aws bedrock-agent list-ingestion-jobs --knowledge-base-id $KB_ID`
+- Ensure OpenSearch Serverless collection is active
+- Verify vector index created: `ci-alert-index`
+
+### Issue: Agent preparation fails
+**Solution:**
+- Run: `aws bedrock-agent prepare-agent --agent-id $AGENT_ID`
+- Check agent has knowledge base associated
+- Verify action group Lambda permissions
 
 ### Issue: Insights not stored in DynamoDB
 **Solution:** Check Lambda IAM permissions for DynamoDB write
@@ -460,19 +554,29 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
 
 ---
 
+## Current RAG Implementation
+
+1. **✅ Knowledge Base:** Bedrock Knowledge Base with OpenSearch Serverless
+2. **✅ Agent Framework:** Bedrock Agent with multi-step reasoning
+3. **✅ Vector Search:** Hybrid search (semantic + keyword)
+4. **✅ Document Processing:** Auto-sync S3 uploads to knowledge base
+5. **✅ Interactive Chat:** React frontend with agent integration
+
 ## Future Enhancements
 
-1. **Knowledge Base:** Use Bedrock Knowledge Base for RAG
-2. **Agent Framework:** Implement Bedrock Agents for multi-step reasoning
-3. **Fine-tuning:** Custom model for pharmaceutical domain
-4. **Multi-modal:** Analyze charts/graphs from publications
-5. **Real-time Streaming:** WebSocket updates for live insights
+1. **Fine-tuning:** Custom model for pharmaceutical domain
+2. **Multi-modal:** Analyze charts/graphs from publications
+3. **Real-time Streaming:** WebSocket updates for live insights
+4. **Advanced RAG:** Multi-hop reasoning across documents
+5. **Federated Search:** Query multiple knowledge bases
 
 ---
 
 ## References
 
 - [Amazon Bedrock Documentation](https://docs.aws.amazon.com/bedrock/)
-- [Claude 3 Model Card](https://www.anthropic.com/claude)
+- [Claude 3.5 Model Card](https://www.anthropic.com/claude)
+- [Bedrock Knowledge Base Guide](https://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base.html)
+- [OpenSearch Serverless Documentation](https://docs.aws.amazon.com/opensearch-service/latest/developerguide/serverless.html)
 - [Prompt Engineering Guide](https://docs.anthropic.com/claude/docs/prompt-engineering)
 - [AWS Lambda Best Practices](https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html)

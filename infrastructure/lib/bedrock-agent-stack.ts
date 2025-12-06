@@ -16,6 +16,8 @@ export class BedrockAgentStack extends cdk.Stack {
     // Get table names from environment or use defaults
     const insightsTableName = process.env.INSIGHTS_TABLE || 'CIAlertStack-InsightsTable';
     const watchlistTableName = process.env.WATCHLIST_TABLE || 'CIAlertStack-WatchlistTable';
+    // Import knowledge base ID from KnowledgeBase stack output
+    const knowledgeBaseId = cdk.Fn.importValue('KnowledgeBaseId');
 
     // Import existing tables
     const insightsTable = dynamodb.Table.fromTableName(this, 'InsightsTable', insightsTableName);
@@ -45,6 +47,7 @@ export class BedrockAgentStack extends cdk.Stack {
       environment: {
         INSIGHTS_TABLE: insightsTable.tableName,
         WATCHLIST_TABLE: watchlistTable.tableName,
+        KNOWLEDGE_BASE_ID: cdk.Fn.importValue('KnowledgeBaseId'),
       },
     });
 
@@ -58,18 +61,68 @@ export class BedrockAgentStack extends cdk.Stack {
     const agent = new bedrock.CfnAgent(this, 'Agent', {
       agentName: 'ci-alert-agent',
       agentResourceRoleArn: agentRole.roleArn,
-      foundationModel: 'us.amazon.nova-premier-v1:0',
-      instruction: `You are a pharmaceutical competitive intelligence analyst assistant.
+      foundationModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+      instruction: `You are a pharmaceutical competitive intelligence analyst assistant with access to a comprehensive knowledge base.
 
 Your role:
 - Analyze drug development news and clinical trials
+- Search historical data and documents using RAG
 - Identify competitive threats and opportunities
 - Track FDA approvals and regulatory changes
-- Provide strategic recommendations
-- Answer questions about molecules and insights
+- Provide strategic recommendations with citations
 
-Be concise, data-driven, and highlight high-impact events.`,
+Available actions:
+- query_insights: Get insights for a specific molecule
+- analyze_trends: Analyze sentiment trends over time
+- compare_molecules: Compare two molecules
+- search_knowledge: Search knowledge base for relevant documents
+
+Always cite sources and provide evidence-based analysis.`,
+      // knowledgeBaseIds: [knowledgeBaseId], // Will be set after KB deployment
       idleSessionTtlInSeconds: 600,
+    });
+
+    // Action Group
+    const actionGroup = new bedrock.CfnAgentActionGroup(this, 'ActionGroup', {
+      agentId: agent.attrAgentId,
+      agentVersion: 'DRAFT',
+      actionGroupName: 'ci-alert-actions',
+      actionGroupExecutor: {
+        lambda: actionLambda.functionArn,
+      },
+      actionGroupState: 'ENABLED',
+      apiSchema: {
+        payload: JSON.stringify({
+          openapi: '3.0.0',
+          info: {
+            title: 'CI Alert Actions',
+            version: '1.0.0',
+          },
+          paths: {
+            '/search-knowledge': {
+              post: {
+                description: 'Search knowledge base for relevant documents',
+                operationId: 'searchKnowledge',
+                requestBody: {
+                  required: true,
+                  content: {
+                    'application/json': {
+                      schema: {
+                        type: 'object',
+                        properties: {
+                          query: { type: 'string' },
+                          limit: { type: 'integer', default: 5 },
+                        },
+                        required: ['query'],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+      },
     });
 
     // Agent Alias
@@ -77,6 +130,7 @@ Be concise, data-driven, and highlight high-impact events.`,
       agentId: agent.attrAgentId,
       agentAliasName: 'production',
     });
+    agentAlias.node.addDependency(actionGroup);
 
     this.agentId = agent.attrAgentId;
     this.agentAliasId = agentAlias.attrAgentAliasId;

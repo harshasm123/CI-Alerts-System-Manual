@@ -1,0 +1,115 @@
+version: 0.2
+
+env:
+  variables:
+    NODE_VERSION: "18"
+    PYTHON_VERSION: "3.12"
+  parameter-store:
+    SONAR_TOKEN: "/ci-alert/sonar-token"
+    GITHUB_TOKEN: "/ci-alert/github-token"
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+      python: 3.12
+    commands:
+      - echo "Installing dependencies..."
+      - npm install -g aws-cdk@latest
+      - pip install pytest boto3 moto bandit safety
+      - npm install -g @typescript-eslint/parser eslint
+
+  pre_build:
+    commands:
+      - echo "=== SECURITY SCANNING ==="
+      - echo "Running npm audit..."
+      - cd frontend && npm audit --audit-level high
+      - echo "Running Python security scan..."
+      - cd ../lambdas && bandit -r . -f json -o ../security-report.json || true
+      - echo "Checking for known vulnerabilities..."
+      - safety check --json --output ../safety-report.json || true
+      
+      - echo "=== CODE QUALITY ==="
+      - echo "Running ESLint..."
+      - cd ../frontend && npx eslint src/ --format json --output-file ../eslint-report.json || true
+      - echo "Running Python linting..."
+      - cd ../lambdas && flake8 . --format=json --output-file=../flake8-report.json || true
+      
+      - echo "=== UNIT TESTING ==="
+      - echo "Running Python tests..."
+      - cd ../lambdas && python -m pytest tests/ -v --cov=. --cov-report=xml --cov-report=html --junitxml=../test-results.xml
+      - echo "Running React tests..."
+      - cd ../frontend && npm test -- --coverage --watchAll=false --testResultsProcessor=jest-sonar-reporter
+
+  build:
+    commands:
+      - echo "=== BUILDING INFRASTRUCTURE ==="
+      - cd infrastructure
+      - npm install
+      - npm run build
+      - npm run test || true
+      
+      - echo "=== BUILDING FRONTEND ==="
+      - cd ../frontend
+      - npm install
+      - npm run build
+      
+      - echo "=== INTEGRATION TESTS ==="
+      - cd ..
+      - python -m pytest integration-tests/ -v --junitxml=integration-test-results.xml || true
+
+  post_build:
+    commands:
+      - echo "=== DEPLOYMENT ARTIFACTS ==="
+      - echo "Syncing frontend build to S3..."
+      - aws s3 sync frontend/build/ s3://$ARTIFACTS_BUCKET/frontend-$CODEBUILD_BUILD_NUMBER/ --delete
+      
+      - echo "=== QUALITY GATES ==="
+      - echo "Checking test coverage..."
+      - python scripts/check_coverage.py
+      
+      - echo "=== NOTIFICATIONS ==="
+      - echo "Build completed successfully"
+      - aws sns publish --topic-arn $SNS_TOPIC_ARN --message "Build $CODEBUILD_BUILD_NUMBER completed successfully"
+
+artifacts:
+  files:
+    - '**/*'
+  secondary-artifacts:
+    frontend-build:
+      files:
+        - 'frontend/build/**/*'
+      base-directory: 'frontend/build'
+    infrastructure-build:
+      files:
+        - 'infrastructure/cdk.out/**/*'
+      base-directory: 'infrastructure/cdk.out'
+    test-reports:
+      files:
+        - '*-report.json'
+        - '*-results.xml'
+        - 'lambdas/htmlcov/**/*'
+
+reports:
+  unit-tests:
+    files:
+      - 'test-results.xml'
+      - 'integration-test-results.xml'
+    file-format: 'JUNITXML'
+  
+  code-coverage:
+    files:
+      - 'lambdas/coverage.xml'
+    file-format: 'COBERTURAXML'
+  
+  security-scan:
+    files:
+      - 'security-report.json'
+      - 'safety-report.json'
+    file-format: 'JSON'
+
+cache:
+  paths:
+    - 'frontend/node_modules/**/*'
+    - 'infrastructure/node_modules/**/*'
+    - '/root/.cache/pip/**/*'

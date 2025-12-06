@@ -1,6 +1,6 @@
 # Competitive Intelligence Alert System
 
-Production-grade AWS system for pharmaceutical competitive intelligence with AI-powered insights, daily email digests, and secure user authentication.
+Production-grade AWS system for pharmaceutical competitive intelligence with RAG knowledge base, AI-powered insights, and intelligent email summaries.
 
 ## 🚀 Quick Deploy
 
@@ -38,12 +38,14 @@ User → CloudFront → S3 (React + Amplify)
          ↓
     API Gateway (Cognito Authorizer)
          ↓
-    Lambda Functions
-         ↓
-    DynamoDB Tables
+    Lambda Functions ↔ Bedrock Agent (RAG)
+         ↓                    ↓
+    DynamoDB Tables    Knowledge Base
+                            ↓
+                    OpenSearch Serverless
 
-EventBridge (Midnight) → PubMed Ingestion → SQS → Processor → Amazon Nova Lite
-EventBridge (9 AM) → Digest Lambda → SES Email
+EventBridge (Midnight) → PubMed Ingestion → SQS → Processor → Claude 3.5 Haiku
+EventBridge (9 AM) → Digest Lambda → AI Summary → SES Email
 ```
 
 ---
@@ -51,8 +53,10 @@ EventBridge (9 AM) → Digest Lambda → SES Email
 ## Key Features
 
 ✅ **Secure Authentication** - Cognito with email sign-in, auto-verify  
-✅ **AI Insights** - Amazon Nova Lite for pharmaceutical analysis  
-✅ **Daily Digests** - 9 AM UTC email alerts via SES  
+✅ **AI Insights** - Claude 3.5 models for pharmaceutical analysis  
+✅ **RAG Knowledge Base** - OpenSearch Serverless with vector search  
+✅ **Bedrock Agent** - Interactive chat with document citations  
+✅ **AI-Powered Digests** - Claude-generated email summaries at 9 AM UTC  
 ✅ **User Watchlists** - Per-user molecule tracking  
 ✅ **React UI** - Modern frontend with AWS Amplify  
 ✅ **Protected API** - All endpoints require JWT tokens  
@@ -63,11 +67,13 @@ EventBridge (9 AM) → Digest Lambda → SES Email
 
 ## Components
 
-### Infrastructure (4 Stacks)
+### Infrastructure (6 Stacks)
 1. **CIAlertStack** - Core (DynamoDB, Lambda, API Gateway, Cognito, SQS, EventBridge)
-2. **CIAlert-Frontend** - S3 + CloudFront for React app
-3. **CIAlert-Monitoring** - CloudWatch dashboards and alarms
-4. **CIAlert-CICD** - CodePipeline for automated deployments
+2. **CIAlert-KnowledgeBase** - S3 + OpenSearch Serverless + Bedrock KB
+3. **CIAlert-BedrockAgent** - Bedrock Agent + RAG actions
+4. **CIAlert-Frontend** - S3 + CloudFront for React app
+5. **CIAlert-Monitoring** - CloudWatch dashboards and alarms
+6. **CIAlert-CICD** - CodePipeline for automated deployments
 
 ### DynamoDB Tables
 - **InsightsTable** - AI-generated insights (PK: molecule, SK: timestamp)
@@ -76,17 +82,20 @@ EventBridge (9 AM) → Digest Lambda → SES Email
 
 ### Lambda Functions
 - **PubMedFunction** - Fetches pharmaceutical news from PubMed API
-- **ProcessorFunction** - AI processing with Amazon Nova Lite
+- **ProcessorFunction** - AI processing with Claude 3.5 Haiku
 - **WatchlistFunction** - Watchlist CRUD API
-- **InsightsFunction** - Insights query API
-- **DigestFunction** - Daily email sender (9 AM UTC)
+- **InsightsFunction** - Insights query API with GSI1 optimization
+- **DigestFunction** - AI-powered email summaries (9 AM UTC)
+- **AgentFunction** - Bedrock Agent API for chat interface
+- **ActionHandler** - RAG search and DynamoDB actions
 
 ### API Endpoints (Protected)
-- `GET /insights` - Get all insights
+- `GET /insights` - Get all insights (optimized with GSI1)
 - `GET /insights?molecule=X` - Get insights for specific molecule
 - `GET /watchlist?userId=X` - Get user watchlist
 - `POST /watchlist` - Add molecule to watchlist
 - `DELETE /watchlist?userId=X&molecule=Y` - Remove molecule
+- `POST /agent` - Chat with Bedrock Agent (RAG + actions)
 
 ### EventBridge Rules
 - **DailyIngestionRule** - Triggers at midnight UTC
@@ -137,17 +146,27 @@ aws dynamodb put-item --table-name $SETTINGS_TABLE --item '{
 
 ## Cost Estimate
 
-**Monthly (Light Usage):**
-- DynamoDB: $1-5 (On-Demand)
-- Lambda: $0-2 (Free tier: 1M requests)
+**Monthly (100 users, 100 insights/day):**
+- DynamoDB: $5 (On-Demand)
+- Lambda: $2 (1M requests)
 - API Gateway: $3.50 (1M requests)
-- S3: $0.50 (10GB)
+- S3: $5 (50GB + documents)
 - CloudFront: $1 (10GB transfer)
 - Cognito: Free (50K MAU)
-- SES: $0.10 (1K emails)
+- SES: $1 (10K emails)
 - CloudWatch: $3
+- **Bedrock Models:**
+  - Claude 3.5 Haiku (batch): $0.50
+  - Claude 3.5 Sonnet v2 (agent): $44
+  - Titan Embeddings: $15
+- **OpenSearch Serverless:** $55 (2 OCUs)
 
-**Total: ~$10-15/month**
+**Total: ~$135/month**
+
+**Cost Optimization:**
+- 2-model approach saves $13.50/month vs single Sonnet
+- OpenSearch Serverless vs Service saves $35/month
+- Serverless architecture (no ECS/VPC costs)
 
 ---
 
@@ -250,35 +269,48 @@ CI Alert System/
 ├── infrastructure/          # CDK infrastructure code
 │   ├── lib/
 │   │   ├── ci-alert-stack.ts       # Core stack
+│   │   ├── knowledge-base-stack.ts # S3 + OpenSearch + Bedrock KB
+│   │   ├── bedrock-agent-stack.ts  # Agent + RAG actions
 │   │   ├── frontend-stack.ts       # S3 + CloudFront
 │   │   ├── monitoring-stack.ts     # CloudWatch
 │   │   └── cicd-stack.ts           # CodePipeline
 │   └── bin/ci-alert.ts
 ├── lambdas/
-│   ├── processing/processor.py     # Amazon Nova Lite integration
+│   ├── processing/
+│   │   ├── processor.py            # Claude 3.5 Haiku integration
+│   │   └── document_processor.py   # Knowledge base sync
 │   ├── ingestion/pubmed_ingestion.py
 │   ├── api/
 │   │   ├── watchlist_api.py
-│   │   └── insights_api.py
-│   └── notifications/daily_digest.py
+│   │   ├── insights_api.py         # GSI1 optimized queries
+│   │   └── agent_api.py            # Bedrock Agent endpoint
+│   ├── bedrock-agent/
+│   │   ├── action_handler.py       # RAG + DynamoDB actions
+│   │   └── knowledge_search.py     # Vector search functions
+│   └── notifications/daily_digest.py  # AI-powered email summaries
 ├── frontend/
 │   ├── src/
-│   │   ├── App.js                  # React + Amplify auth
-│   │   ├── App.css
+│   │   ├── App.js                  # React + Amplify auth + tabs
+│   │   ├── App.css                 # Modern UI styling
+│   │   ├── Chat.js                 # Bedrock Agent chat interface
+│   │   ├── Chat.css                # Chat UI styling
 │   │   └── index.js
 │   ├── public/index.html
 │   └── package.json
-├── deploy.sh                       # Main deployment
+├── deploy.sh                       # Main deployment (6 stacks)
 ├── deploy-cognito-frontend.sh      # Frontend deployment
 ├── setup-ses.sh                    # Email verification
-├── test.sh                         # Unified test script (cognito|system|digest|ingestion|api)
+├── test.sh                         # Unified test script
+├── connect-knowledge-base.sh       # Link KB to Agent
+├── upload-sample-data.sh           # Sample pharmaceutical docs
 ├── check-bootstrap.sh              # CDK bootstrap check
 ├── fix-rollback.sh                 # Stack cleanup
 ├── destroy.sh                      # Delete all stacks
 ├── prereq.sh                       # Install prerequisites
-├── GET_URLS.sh                     # Get all URLs
+├── shell scripts/GET_URLS.sh       # Get all URLs
 ├── README.md                       # This file
-└── QUICKSTART.md                   # Detailed guide
+├── QUICKSTART.md                   # Detailed guide
+└── RAG_IMPLEMENTATION.md           # RAG setup and usage
 ```
 
 ---

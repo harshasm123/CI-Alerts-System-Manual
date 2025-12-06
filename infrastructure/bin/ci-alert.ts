@@ -6,6 +6,7 @@ import { FrontendStack } from '../lib/frontend-stack';
 import { MonitoringStack } from '../lib/monitoring-stack';
 import { CICDStack } from '../lib/cicd-stack';
 import { BedrockAgentStack } from '../lib/bedrock-agent-stack';
+import { KnowledgeBaseStack } from '../lib/knowledge-base-stack';
 
 const app = new cdk.App();
 
@@ -22,6 +23,7 @@ const monitoringStack = new MonitoringStack(app, 'CIAlert-Monitoring', {
   alertEmail: process.env.ALERT_EMAIL || 'alerts@example.com',
 });
 const cicdStack = new CICDStack(app, 'CIAlert-CICD', { env });
+const knowledgeBaseStack = new KnowledgeBaseStack(app, 'CIAlert-KnowledgeBase', { env });
 const bedrockAgentStack = new BedrockAgentStack(app, 'CIAlert-BedrockAgent', { env });
 
 app.synth();

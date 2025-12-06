@@ -57,10 +57,22 @@ else
 fi
 
 echo ""
+echo "=== CIAlert-KnowledgeBase ==="
+if aws cloudformation describe-stacks --stack-name CIAlert-KnowledgeBase --region $REGION &>/dev/null; then
+    KB_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-KnowledgeBase --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`KnowledgeBaseId`].OutputValue' --output text 2>/dev/null)
+    KB_BUCKET=$(aws cloudformation describe-stacks --stack-name CIAlert-KnowledgeBase --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`DataSourceBucket`].OutputValue' --output text 2>/dev/null)
+    
+    [ -n "$KB_ID" ] && echo "  📚 Knowledge Base ID: $KB_ID"
+    [ -n "$KB_BUCKET" ] && echo "  🪣 KB Bucket: s3://$KB_BUCKET"
+else
+    echo "  ❌ Not deployed"
+fi
+
+echo ""
 echo "=== CIAlert-BedrockAgent ==="
 if aws cloudformation describe-stacks --stack-name CIAlert-BedrockAgent --region $REGION &>/dev/null; then
-    AGENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-BedrockAgent --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`AgentId`].OutputValue' --output text 2>/dev/null)
-    AGENT_ALIAS_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-BedrockAgent --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`AgentAliasId`].OutputValue' --output text 2>/dev/null)
+    AGENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-BedrockAgent --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`AgentIdOutput`].OutputValue' --output text 2>/dev/null)
+    AGENT_ALIAS_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-BedrockAgent --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`AgentAliasIdOutput`].OutputValue' --output text 2>/dev/null)
     
     [ -n "$AGENT_ID" ] && echo "  🤖 Agent ID: $AGENT_ID"
     [ -n "$AGENT_ALIAS_ID" ] && echo "  🎯 Alias ID: $AGENT_ALIAS_ID"

@@ -38,11 +38,13 @@ cd ..
 bash deploy.sh
 ```
 
-**Deploys 4 stacks (~8-10 minutes):**
+**Deploys 6 stacks (~12-15 minutes):**
 1. CIAlertStack - Core (DynamoDB, Lambda, API Gateway, Cognito, SQS, EventBridge)
-2. CIAlert-Frontend - S3 + CloudFront
-3. CIAlert-Monitoring - CloudWatch
-4. CIAlert-CICD - CodePipeline (optional)
+2. CIAlert-KnowledgeBase - S3 + OpenSearch Serverless + Bedrock KB
+3. CIAlert-BedrockAgent - Bedrock Agent + RAG actions
+4. CIAlert-Frontend - S3 + CloudFront
+5. CIAlert-Monitoring - CloudWatch
+6. CIAlert-CICD - CodePipeline (optional)
 
 ---
 
@@ -56,7 +58,39 @@ Enter your email address and verify it by clicking the link in your inbox.
 
 ---
 
-## Step 4: Deploy Frontend
+## Step 4: Enable Bedrock Models
+
+```bash
+echo "Enable these models in AWS Console:"
+echo "1. Go to: https://console.aws.amazon.com/bedrock/home#/modelaccess"
+echo "2. Enable: Claude 3.5 Sonnet v2"
+echo "3. Enable: Claude 3.5 Haiku"
+echo "4. Enable: Titan Text Embeddings v1"
+echo "5. Wait for 'Access granted' status"
+```
+
+**Required for:**
+- Claude 3.5 Haiku: Batch processing (cost-effective)
+- Claude 3.5 Sonnet v2: Interactive agent queries
+- Titan Embeddings: Vector search in knowledge base
+
+---
+
+## Step 5: Upload Sample Data
+
+```bash
+bash upload-sample-data.sh
+```
+
+**This will:**
+- Create sample pharmaceutical documents
+- Upload to knowledge base S3 bucket
+- Start Bedrock ingestion job
+- Enable RAG search capabilities
+
+---
+
+## Step 6: Deploy Frontend
 
 ```bash
 bash deploy-cognito-frontend.sh
@@ -70,7 +104,7 @@ bash deploy-cognito-frontend.sh
 
 ---
 
-## Step 5: Create Test User
+## Step 7: Create Test User
 
 ```bash
 USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text)
@@ -91,7 +125,7 @@ aws cognito-idp admin-confirm-user \
 
 ---
 
-## Step 6: Add User Email for Digests
+## Step 8: Add User Email for Digests
 
 ```bash
 SETTINGS_TABLE=$(aws dynamodb list-tables --query "TableNames[?contains(@,'UserSettings')]|[0]" --output text)
@@ -109,7 +143,7 @@ Replace `YOUR_VERIFIED_EMAIL` with the email you verified in Step 3.
 
 ---
 
-## Step 7: Trigger Test Ingestion
+## Step 9: Trigger Test Ingestion
 
 ```bash
 bash test.sh ingestion
@@ -119,7 +153,7 @@ This creates test insights for Keytruda and Opdivo.
 
 ---
 
-## Step 8: Test Daily Digest
+## Step 10: Test Daily Digest
 
 ```bash
 bash test.sh digest
@@ -129,7 +163,7 @@ Check your email for the digest.
 
 ---
 
-## Step 9: Access Frontend
+## Step 11: Access Frontend
 
 ```bash
 CLOUDFRONT_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontURL`].OutputValue' --output text)
@@ -139,6 +173,13 @@ echo "Frontend: $CLOUDFRONT_URL"
 **Login with:**
 - Email: `test@example.com`
 - Password: `Test123!`
+
+**Test Features:**
+- Dashboard: View insights overview
+- AI Assistant: Chat with Bedrock Agent (try "Search for Keytruda FDA approval")
+- Watchlist: Add/remove molecules
+- Insights: Browse all insights with search
+- Settings: Configure email preferences
 
 ---
 
@@ -157,6 +198,16 @@ bash test.sh system
 ### Test API Endpoints
 ```bash
 bash test.sh api
+```
+
+### Test RAG Knowledge Base
+```bash
+# Check knowledge base status
+KB_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-KnowledgeBase --query 'Stacks[0].Outputs[?OutputKey==`KnowledgeBaseId`].OutputValue' --output text)
+aws bedrock-agent list-ingestion-jobs --knowledge-base-id $KB_ID
+
+# Test agent with RAG
+echo "Try asking the AI Assistant: 'Search for FDA approval documents'"
 ```
 
 ---
@@ -179,17 +230,20 @@ aws cognito-idp admin-confirm-user \
 
 **Solution:**
 ```bash
-# Trigger ingestion
+# 1. Check Bedrock model access
+echo "Verify Claude 3.5 Haiku enabled in Bedrock console"
+
+# 2. Trigger ingestion
 bash test.sh ingestion
 
-# Wait 15 seconds for processing
-sleep 15
+# 3. Wait for processing
+sleep 30
 
-# Check insights table
+# 4. Check insights table
 INSIGHTS_TABLE=$(aws dynamodb list-tables --query "TableNames[?contains(@,'Insights')]|[0]" --output text)
 aws dynamodb scan --table-name $INSIGHTS_TABLE --max-items 5
 
-# Check processor logs
+# 5. Check processor logs
 aws logs tail /aws/lambda/CIAlertStack-ProcessorFunction --since 10m
 ```
 
@@ -226,14 +280,45 @@ aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_ID --paths "/*"
 
 **Solution:**
 ```bash
-# Ensure region is us-east-1
+# Switch to supported region
 export AWS_REGION=us-east-1
 aws configure set region us-east-1
 
-# Re-bootstrap
+# Clean and re-bootstrap
+bash fix-rollback.sh
 cd infrastructure
 cdk bootstrap
 cd ..
+```
+
+### Issue: Agent chat not working
+
+**Solution:**
+```bash
+# 1. Check agent status
+AGENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-BedrockAgent --query 'Stacks[0].Outputs[?OutputKey==`AgentIdOutput`].OutputValue' --output text)
+aws bedrock-agent get-agent --agent-id $AGENT_ID
+
+# 2. Prepare agent if needed
+aws bedrock-agent prepare-agent --agent-id $AGENT_ID
+
+# 3. Check knowledge base connection
+bash connect-knowledge-base.sh
+```
+
+### Issue: Knowledge base search returns no results
+
+**Solution:**
+```bash
+# 1. Check ingestion job status
+KB_ID=$(aws cloudformation describe-stacks --stack-name CIAlert-KnowledgeBase --query 'Stacks[0].Outputs[?OutputKey==`KnowledgeBaseId`].OutputValue' --output text)
+aws bedrock-agent list-ingestion-jobs --knowledge-base-id $KB_ID
+
+# 2. Re-upload sample data
+bash upload-sample-data.sh
+
+# 3. Check OpenSearch collection
+aws opensearchserverless list-collections --collection-filters name=ci-alert-vectors
 ```
 
 ---
@@ -275,14 +360,15 @@ echo "https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards
 ## Cleanup
 
 ```bash
-# Delete all stacks
-cd infrastructure
-cdk destroy --all
+# Use destroy script (handles dependencies)
+bash destroy.sh
 
-# Or manually
+# Or manually in reverse order
 aws cloudformation delete-stack --stack-name CIAlert-CICD
 aws cloudformation delete-stack --stack-name CIAlert-Monitoring
 aws cloudformation delete-stack --stack-name CIAlert-Frontend
+aws cloudformation delete-stack --stack-name CIAlert-BedrockAgent
+aws cloudformation delete-stack --stack-name CIAlert-KnowledgeBase
 aws cloudformation delete-stack --stack-name CIAlertStack
 
 # Wait for completion
@@ -293,13 +379,16 @@ aws cloudformation wait stack-delete-complete --stack-name CIAlertStack
 
 ## Success Checklist
 
-- [ ] All 4 stacks deployed successfully
+- [ ] All 6 stacks deployed successfully
+- [ ] Bedrock models enabled (Claude 3.5 Sonnet v2, Haiku, Titan Embeddings)
+- [ ] Knowledge base documents uploaded and ingested
 - [ ] SES email verified
 - [ ] Frontend accessible via CloudFront URL
 - [ ] User can sign in with Cognito
+- [ ] AI Assistant chat works with RAG search
 - [ ] Watchlist CRUD operations work
-- [ ] Insights visible in UI
-- [ ] Test email digest received
+- [ ] Insights visible in UI with AI summaries
+- [ ] Test email digest received with AI summary
 - [ ] CloudWatch dashboard shows metrics
 - [ ] EventBridge rules active
 
@@ -308,21 +397,25 @@ aws cloudformation wait stack-delete-complete --stack-name CIAlertStack
 ## Next Steps
 
 1. **Add More Molecules** - Use the UI to add molecules to your watchlist
-2. **Customize Email Template** - Edit `lambdas/notifications/daily_digest.py`
-3. **Add Data Sources** - Integrate FDA, EMA, WIPO APIs
-4. **Custom Domain** - Set up Route53 and ACM certificate
-5. **Production Email** - Move SES out of sandbox mode
-6. **Monitoring Alerts** - Configure SNS for CloudWatch alarms
+2. **Upload Real Documents** - Add FDA approvals, clinical trials, patents to knowledge base
+3. **Customize AI Prompts** - Edit prompts in `lambdas/processing/processor.py`
+4. **Add Data Sources** - Integrate FDA, EMA, WIPO APIs
+5. **Custom Domain** - Set up Route53 and ACM certificate
+6. **Production Email** - Move SES out of sandbox mode
+7. **Advanced RAG** - Add more document types and metadata
+8. **Monitoring Alerts** - Configure SNS for CloudWatch alarms
 
 ---
 
 ## Cost Optimization Tips
 
-- Use S3 lifecycle policies for old data
-- Enable DynamoDB auto-scaling if needed
-- Use Lambda reserved concurrency for predictable costs
-- Set CloudWatch Logs retention to 7 days
-- Monitor with AWS Cost Explorer
+- **Models**: 2-model approach saves $13.50/month vs single Sonnet
+- **OpenSearch**: Serverless saves $35/month vs managed service
+- **S3**: Use lifecycle policies for old documents
+- **DynamoDB**: On-demand pricing for variable workloads
+- **Lambda**: Reserved concurrency for predictable costs
+- **Logs**: Set CloudWatch retention to 7 days
+- **Monitoring**: Use AWS Cost Explorer and budgets
 
 ---
 
