@@ -80,12 +80,19 @@ $PYTHON_CMD -m pip install requests boto3 -t . --quiet
 
 # Create deployment package
 echo "📦 Creating deployment package..."
-if command -v zip &> /dev/null; then
-    zip -r -q pubmed-function.zip .
-else
-    # Use PowerShell on Windows if zip not available
-    powershell -Command "Compress-Archive -Path * -DestinationPath pubmed-function.zip -Force"
+if ! command -v zip &> /dev/null; then
+    echo "⚠️  zip not found. Installing..."
+    if command -v apt &> /dev/null; then
+        sudo apt install zip -y
+    elif command -v yum &> /dev/null; then
+        sudo yum install zip -y
+    else
+        echo "❌ Cannot install zip. Please install manually: sudo apt install zip"
+        exit 1
+    fi
 fi
+
+zip -r -q pubmed-function.zip .
 
 # Update Lambda function
 echo "📦 Updating Lambda function..."
