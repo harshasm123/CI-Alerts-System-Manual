@@ -83,7 +83,7 @@ Always cite sources and provide evidence-based analysis.`,
     });
 
     // Action Group
-    const actionGroup = new bedrock.CfnAgent(this, 'ActionGroup', {
+    const actionGroup = new bedrock.CfnAgentActionGroup(this, 'ActionGroup', {
       agentId: agent.attrAgentId,
       agentVersion: 'DRAFT',
       actionGroupName: 'ci-alert-actions',
