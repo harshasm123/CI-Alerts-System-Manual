@@ -8,18 +8,18 @@ echo "🚀 Starting CI Alert System Deployment"
 # Configuration - Dynamic region detection
 REGION=$(aws configure get region)
 if [ -z "$REGION" ]; then
-    REGION="us-east-1"
+    REGION="us-west-2"
     aws configure set region $REGION
     echo "ℹ️  No region configured. Using $REGION"
 fi
 
-# Check for problematic regions
-PROBLEMATIC_REGIONS=("us-west-2" "eu-west-1" "ap-southeast-1")
+# Check for problematic regions (us-east-1 has CloudFormation hooks)
+PROBLEMATIC_REGIONS=("us-east-1" "eu-west-1" "ap-southeast-1")
 for prob_region in "${PROBLEMATIC_REGIONS[@]}"; do
     if [ "$REGION" = "$prob_region" ]; then
         echo "⚠️  $REGION has CloudFormation hooks blocking CDK"
         echo "   This region has AWS::EarlyValidation::ResourceExistenceCheck enabled"
-        REGION="us-east-1"
+        REGION="us-west-2"
         aws configure set region $REGION
         echo "✅ Automatically switched to $REGION"
         echo "   If you need to use $prob_region, contact AWS administrator to disable the hook"
