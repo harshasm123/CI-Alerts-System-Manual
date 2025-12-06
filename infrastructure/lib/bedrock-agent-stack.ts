@@ -82,46 +82,49 @@ Always cite sources and provide evidence-based analysis.`,
       idleSessionTtlInSeconds: 600,
     });
 
-    // Action Group
-    const actionGroup = new bedrock.CfnAgentActionGroup(this, 'ActionGroup', {
-      agentId: agent.attrAgentId,
-      agentVersion: 'DRAFT',
-      actionGroupName: 'ci-alert-actions',
-      actionGroupExecutor: {
-        lambda: actionLambda.functionArn,
-      },
-      actionGroupState: 'ENABLED',
-      apiSchema: {
-        payload: JSON.stringify({
-          openapi: '3.0.0',
-          info: {
-            title: 'CI Alert Actions',
-            version: '1.0.0',
-          },
-          paths: {
-            '/search-knowledge': {
-              post: {
-                description: 'Search knowledge base for relevant documents',
-                operationId: 'searchKnowledge',
-                requestBody: {
-                  required: true,
-                  content: {
-                    'application/json': {
-                      schema: {
-                        type: 'object',
-                        properties: {
-                          query: { type: 'string' },
-                          limit: { type: 'integer', default: 5 },
+    // Action Group - using CfnResource for compatibility
+    const actionGroup = new cdk.CfnResource(this, 'ActionGroup', {
+      type: 'AWS::Bedrock::AgentActionGroup',
+      properties: {
+        AgentId: agent.attrAgentId,
+        AgentVersion: 'DRAFT',
+        ActionGroupName: 'ci-alert-actions',
+        ActionGroupExecutor: {
+          Lambda: actionLambda.functionArn,
+        },
+        ActionGroupState: 'ENABLED',
+        ApiSchema: {
+          Payload: JSON.stringify({
+            openapi: '3.0.0',
+            info: {
+              title: 'CI Alert Actions',
+              version: '1.0.0',
+            },
+            paths: {
+              '/search-knowledge': {
+                post: {
+                  description: 'Search knowledge base for relevant documents',
+                  operationId: 'searchKnowledge',
+                  requestBody: {
+                    required: true,
+                    content: {
+                      'application/json': {
+                        schema: {
+                          type: 'object',
+                          properties: {
+                            query: { type: 'string' },
+                            limit: { type: 'integer', default: 5 },
+                          },
+                          required: ['query'],
                         },
-                        required: ['query'],
                       },
                     },
                   },
                 },
               },
             },
-          },
-        }),
+          }),
+        },
       },
     });
 
