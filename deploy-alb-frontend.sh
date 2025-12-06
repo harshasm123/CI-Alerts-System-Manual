@@ -29,9 +29,14 @@ echo "✅ User Pool: $USER_POOL_ID"
 echo "✅ Region: $REGION"
 echo ""
 
-# Step 2: Create .env file for Docker build
-echo "📝 Creating frontend configuration..."
+# Step 2: Fix package-lock.json and create .env file
+echo "📝 Fixing frontend dependencies..."
 cd frontend
+
+# Remove package-lock.json and node_modules to force clean install
+rm -rf package-lock.json node_modules
+
+# Create .env file for Docker build
 cat > .env << EOF
 REACT_APP_API_URL=$API_URL
 REACT_APP_USER_POOL_ID=$USER_POOL_ID
@@ -39,7 +44,11 @@ REACT_APP_USER_POOL_CLIENT_ID=$USER_POOL_CLIENT_ID
 REACT_APP_REGION=$REGION
 EOF
 
-echo "✅ Configuration created"
+# Generate fresh package-lock.json
+echo "📦 Generating fresh package-lock.json..."
+npm install
+
+echo "✅ Configuration created and dependencies fixed"
 cd ..
 echo ""
 
