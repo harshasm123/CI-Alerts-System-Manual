@@ -14,6 +14,12 @@ fi
 # Set non-interactive mode for apt
 export DEBIAN_FRONTEND=noninteractive
 
+# Wait for any running apt processes to complete
+echo "⏳ Waiting for package manager to be available..."
+sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && echo "Waiting for other package managers to finish..." && sleep 60
+sudo pkill -f apt >/dev/null 2>&1 || true
+sleep 10
+
 # Install unzip if not present
 if ! command -v unzip &> /dev/null; then
     echo "📦 Installing unzip..."

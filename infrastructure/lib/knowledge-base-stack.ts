@@ -17,7 +17,7 @@ export class KnowledgeBaseStack extends cdk.Stack {
       bucketName: `ci-alert-kb-${this.account}-${this.region}`,
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      versioning: true,
+      versioningConfiguration: { status: 'Enabled' },
       lifecycleRules: [{
         id: 'DeleteOldVersions',
         noncurrentVersionExpiration: cdk.Duration.days(30),
