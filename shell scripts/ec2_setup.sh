@@ -7,8 +7,15 @@ set -e
 
 echo "🚀 Setting up CI Alert System on EC2 Ubuntu"
 
+# Wait for any running apt processes to complete
+echo "⏳ Waiting for package manager to be available..."
+sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && echo "Waiting for other package managers to finish..." && sleep 30
+sudo killall apt apt-get >/dev/null 2>&1 || true
+sleep 5
+
 # Update system
 echo "📦 Updating system packages..."
+export DEBIAN_FRONTEND=noninteractive
 sudo apt-get update
 sudo apt-get upgrade -y
 
@@ -31,6 +38,9 @@ fi
 # Install prerequisites
 echo "🔧 Installing prerequisites..."
 
+# Install unzip first
+sudo apt-get install -y unzip
+
 # AWS CLI
 if ! command -v aws &> /dev/null; then
     curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
@@ -39,14 +49,14 @@ if ! command -v aws &> /dev/null; then
     rm -rf aws awscliv2.zip
 fi
 
-# Node.js 18
+# Node.js 20 (LTS)
 if ! command -v node &> /dev/null; then
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-    sudo apt-get install -y nodejs
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
 fi
 
 # Python 3.11
-sudo apt-get install -y python3.11 python3.11-pip python3.11-venv python3-pip
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3.11 python3.11-pip python3.11-venv python3-pip
 
 # Docker
 if ! command -v docker &> /dev/null; then

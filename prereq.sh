@@ -11,6 +11,9 @@ if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
     exit 1
 fi
 
+# Set non-interactive mode for apt
+export DEBIAN_FRONTEND=noninteractive
+
 # Install unzip if not present
 if ! command -v unzip &> /dev/null; then
     echo "📦 Installing unzip..."
@@ -27,18 +30,18 @@ if ! command -v aws &> /dev/null; then
     rm -rf aws awscliv2.zip
 fi
 
-# Install Node.js 18
-if ! command -v node &> /dev/null || [[ $(node -v | cut -d'.' -f1 | cut -d'v' -f2) -lt 18 ]]; then
-    echo "📦 Installing Node.js 18..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-    sudo apt-get install -y nodejs
+# Install Node.js 20 LTS (avoid deprecation warnings)
+if ! command -v node &> /dev/null || [[ $(node -v | cut -d'.' -f1 | cut -d'v' -f2) -lt 20 ]]; then
+    echo "📦 Installing Node.js 20 LTS..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
 fi
 
 # Install Python 3 (use system default)
 if ! command -v python3 &> /dev/null; then
     echo "📦 Installing Python 3..."
     sudo apt-get update
-    sudo apt-get install -y python3 python3-pip python3-venv
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv
 else
     echo "✓ Python 3 already installed: $(python3 --version)"
 fi
