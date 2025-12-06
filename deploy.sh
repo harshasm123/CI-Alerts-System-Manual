@@ -196,24 +196,39 @@ echo "🏗️  Building and deploying infrastructure..."
 cd infrastructure
 npm run build
 
-if [ "$SKIP_CICD" = true ]; then
-    echo "📦 Deploying 5 stacks (skipping CICD)..."
-    # Deploy in correct order: Core -> KB -> Agent -> Frontend -> Monitoring
-    cdk deploy CIAlertStack --require-approval never
-    cdk deploy CIAlert-KnowledgeBase --require-approval never
-    cdk deploy CIAlert-BedrockAgent --require-approval never
-    cdk deploy CIAlert-Frontend --require-approval never
-    cdk deploy CIAlert-Monitoring --require-approval never
-else
-    echo "📦 Deploying all 6 stacks..."
-    # Deploy in correct order
-    cdk deploy CIAlertStack --require-approval never
-    cdk deploy CIAlert-KnowledgeBase --require-approval never
-    cdk deploy CIAlert-BedrockAgent --require-approval never
-    cdk deploy CIAlert-Frontend --require-approval never
-    cdk deploy CIAlert-Monitoring --require-approval never
-    cdk deploy CIAlert-CICD --require-approval never
+# Function to check if stack exists
+check_stack_exists() {
+    local stack_name=$1
+    aws cloudformation describe-stacks --stack-name "$stack_name" --region $REGION &>/dev/null
+    return $?
+}
+
+# Function to deploy stack if needed
+deploy_stack_if_needed() {
+    local stack_name=$1
+    if check_stack_exists "$stack_name"; then
+        echo "  ✓ $stack_name already exists - checking for updates..."
+        cdk deploy $stack_name --require-approval never
+    else
+        echo "  + Creating $stack_name..."
+        cdk deploy $stack_name --require-approval never
+    fi
+}
+
+echo "📋 Checking and deploying stacks in order..."
+echo ""
+
+# Deploy in correct order: Core -> KB -> Agent -> Frontend -> Monitoring -> CICD
+deploy_stack_if_needed "CIAlertStack"
+deploy_stack_if_needed "CIAlert-KnowledgeBase"
+deploy_stack_if_needed "CIAlert-BedrockAgent"
+deploy_stack_if_needed "CIAlert-Frontend"
+deploy_stack_if_needed "CIAlert-Monitoring"
+
+if [ "$SKIP_CICD" != true ]; then
+    deploy_stack_if_needed "CIAlert-CICD"
 fi
+
 cd ..
 
 # Step 6: Connect Knowledge Base to Agent
