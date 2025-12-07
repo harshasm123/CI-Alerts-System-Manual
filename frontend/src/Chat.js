@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './Chat.css';
 
-function Chat({ apiUrl, authToken }) {
+function Chat({ apiUrl, getAuthToken }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -42,14 +42,15 @@ function Chat({ apiUrl, authToken }) {
     setLoading(true);
 
     try {
+      const token = await getAuthToken();
       const response = await fetch(`${apiUrl}agent`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': authToken
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          query: userMessage,
+          message: userMessage,
           sessionId: sessionId,
           ragMode: ragMode,
           context: {

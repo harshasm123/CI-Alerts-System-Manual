@@ -1,5 +1,5 @@
 ╔══════════════════════════════════════════════════════════════════════════════════════╗
-║                    CI ALERT SYSTEM - ARCHITECTURE DIAGRAM                            ║
+║                    CI ALERT SYSTEM - PRODUCTION ARCHITECTURE                         ║
 ║              Pharmaceutical Competitive Intelligence Platform (AWS)                  ║
 ╚══════════════════════════════════════════════════════════════════════════════════════╝
 
@@ -58,14 +58,15 @@
 │  ┌───────────────────────────────────────────────────────────────────────────────┐ │
 │  │                      AWS Bedrock (AI Models)                                  │ │
 │  │  ┌─────────────────────────────────────────────────────────────────────────┐ │ │
-│  │  │  Amazon Nova Lite (Batch Processing)                                    │ │ │
-│  │  │  • Cost-effective: $0.06/$0.24 per 1M tokens                            │ │ │
+│  │  │  Claude 3.5 Haiku (Batch Processing)                                   │ │ │
+│  │  │  • Cost-effective: $0.25/$1.25 per 1M tokens                           │ │ │
 │  │  │  • Sentiment analysis & summarization                                   │ │ │
 │  │  └─────────────────────────────────────────────────────────────────────────┘ │ │
 │  │  ┌─────────────────────────────────────────────────────────────────────────┐ │ │
-│  │  │  Bedrock Agent (Amazon Nova Premier)                                    │ │ │
+│  │  │  Bedrock Agent (Claude 3.5 Sonnet v2)                                  │ │ │
 │  │  │  • Advanced analysis & strategic insights                               │ │ │
 │  │  │  • Query insights, analyze trends, compare molecules                    │ │ │
+│  │  │  • RAG with Knowledge Base integration                                  │ │ │
 │  │  └─────────────────────────────────────────────────────────────────────────┘ │ │
 │  └───────────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────────────┘
@@ -91,94 +92,148 @@
         ▼                                 ▼                                 ▼
 ┌───────────────────┐         ┌───────────────────────┐         ┌───────────────────┐
 │  NOTIFICATION     │         │    API LAYER          │         │   FRONTEND        │
-│     LAYER         │         │  (API Gateway)        │         │     LAYER         │
+│     LAYER         │         │  (API Gateway)        │         │  (PRODUCTION)     │
 └───────────────────┘         └───────────────────────┘         └───────────────────┘
         │                                 │                                 │
         │                                 │                                 │
         ▼                                 ▼                                 ▼
 ┌───────────────────┐         ┌───────────────────────┐         ┌───────────────────┐
-│  EventBridge      │         │  Cognito Authorizer   │         │   CloudFront      │
-│  (9 AM UTC)       │         │  (JWT Validation)     │         │   + WAF           │
+│  EventBridge      │         │  Cognito Authorizer   │         │  Route 53 DNS     │
+│  (9 AM UTC)       │         │  (JWT Validation)     │         │  Custom Domain    │
 │                   │         │                       │         │                   │
-│  Daily Digest     │         │  Protected Endpoints: │         │   Global CDN      │
-│  Scheduler        │         │  • GET /insights      │         │   HTTPS Only      │
-└────────┬──────────┘         │  • GET /watchlist     │         └─────────┬─────────┘
-         │                    │  • POST /watchlist    │                   │
-         ▼                    │  • DELETE /watchlist  │                   ▼
-┌───────────────────┐         └───────────┬───────────┘         ┌───────────────────┐
-│  Digest Lambda    │                     │                     │   S3 Static       │
-│                   │                     ▼                     │   Website         │
-│  • Query user     │         ┌───────────────────────┐         │                   │
-│    watchlists     │         │   Lambda Functions    │         │  React App        │
-│  • Fetch insights │         │                       │         │  • Dashboard      │
-│  • Generate email │         │  • WatchlistFunction  │         │  • Watchlist Mgmt │
-│  • Send via SES   │         │  • InsightsFunction   │         │  • Insights View  │
-└────────┬──────────┘         │  • SettingsFunction   │         │  • Settings       │
-         │                    └───────────────────────┘         │  • AWS Amplify    │
-         ▼                                                      └───────────────────┘
-┌───────────────────┐                                                    │
-│   Amazon SES      │                                                    │
-│                   │                                                    ▼
-│  • Email delivery │                                          ┌───────────────────┐
-│  • Templates      │                                          │  Cognito User     │
-│  • Bounce handling│                                          │  Pool             │
-└───────────────────┘                                          │                   │
-                                                               │  • Email sign-in  │
-                                                               │  • JWT tokens     │
-                                                               │  • Auto-verify    │
+│  Daily Digest     │         │  Protected Endpoints: │         │        │          │
+│  Scheduler        │         │  • GET /insights      │         │        ▼          │
+└────────┬──────────┘         │  • GET /watchlist     │         ┌───────────────────┐
+         │                    │  • POST /watchlist    │         │ Application Load  │
+         ▼                    │  • DELETE /watchlist  │         │ Balancer (ALB)    │
+┌───────────────────┐         └───────────┬───────────┘         │                   │
+│  Digest Lambda    │                     │                     │ • Health Checks   │
+│                   │                     ▼                     │ • Auto Scaling    │
+│  • Query user     │         ┌───────────────────────┐         │ • HTTPS/SSL       │
+│    watchlists     │         │   Lambda Functions    │         │ • WAF Protection  │
+│  • Fetch insights │         │                       │         └─────────┬─────────┘
+│  • Generate email │         │  • WatchlistFunction  │                   │
+│  • Send via SES   │         │  • InsightsFunction   │                   ▼
+└────────┬──────────┘         │  • SettingsFunction   │         ┌───────────────────┐
+         │                    │  • AgentFunction      │         │   ECS Fargate     │
+         ▼                    └───────────────────────┘         │   Cluster         │
+┌───────────────────┐                                          │                   │
+│   Amazon SES      │                                          │ • 2-10 Tasks      │
+│                   │                                          │ • Auto Scaling    │
+│  • Email delivery │                                          │ • Private Subnets │
+│  • Templates      │                                          │ • Container       │
+│  • Bounce handling│                                          │   Insights        │
+└───────────────────┘                                          └─────────┬─────────┘
+                                                                         │
+                                                                         ▼
+                                                               ┌───────────────────┐
+                                                               │  React App        │
+                                                               │  (Nginx)          │
+                                                               │                   │
+                                                               │ • Material-UI     │
+                                                               │ • Real-time Data  │
+                                                               │ • Security Headers│
+                                                               │ • Gzip Compression│
+                                                               │ • Health Checks   │
                                                                └───────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                         PRODUCTION INFRASTRUCTURE                                    │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                              VPC                                              │ │
+│  │  ┌─────────────────────┐                    ┌─────────────────────┐          │ │
+│  │  │   Public Subnets    │                    │  Private Subnets    │          │ │
+│  │  │                     │                    │                     │          │ │
+│  │  │ • ALB               │                    │ • ECS Tasks         │          │ │
+│  │  │ • NAT Gateway       │                    │ • Lambda (VPC)      │          │ │
+│  │  │ • Internet Gateway  │                    │ • RDS (if needed)   │          │ │
+│  │  └─────────────────────┘                    └─────────────────────┘          │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
 │                         MONITORING & OBSERVABILITY                                  │
 │  ┌───────────────────────────────────────────────────────────────────────────────┐ │
 │  │                          CloudWatch Dashboard                                 │ │
+│  │  • ALB: requests, latency, target health                                     │ │
+│  │  • ECS: CPU, memory, task count                                              │ │
 │  │  • API Gateway: requests, latency, errors                                    │ │
 │  │  • Lambda: invocations, duration, errors                                     │ │
 │  │  • DynamoDB: read/write capacity, throttling                                 │ │
-│  │  • SQS: messages sent/received, queue depth                                  │ │
+│  │  • Container Insights: detailed container metrics                            │ │
 │  └───────────────────────────────────────────────────────────────────────────────┘ │
 │  ┌───────────────────────────────────────────────────────────────────────────────┐ │
 │  │                          CloudWatch Alarms                                    │ │
-│  │  • API 5xx errors > 10                                                       │ │
+│  │  • ALB 5xx errors > 10                                                       │ │
+│  │  • ECS CPU utilization > 80%                                                 │ │
 │  │  • API latency > 2000ms                                                      │ │
 │  │  • Lambda errors > 5                                                         │ │
+│  │  • DynamoDB throttling events                                                │ │
 │  └───────────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                              CI/CD PIPELINE                                         │
+│                              SECURITY LAYER                                         │
 │  ┌───────────────────────────────────────────────────────────────────────────────┐ │
-│  │  GitHub → CodePipeline → CodeBuild → CDK Deploy → Production                 │ │
-│  │                                                                               │ │
-│  │  • Automated testing                                                          │ │
-│  │  • Infrastructure as Code (CDK)                                               │ │
-│  │  • Blue/green deployments                                                     │ │
+│  │                              WAF Web ACL                                      │ │
+│  │  • AWS Managed Rules (OWASP Top 10)                                          │ │
+│  │  • Rate Limiting (2000 req/IP/5min)                                          │ │
+│  │  • Geographic restrictions                                                    │ │
+│  │  • Custom rules for pharmaceutical data                                      │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                           Security Groups                                     │ │
+│  │  • ALB: 80/443 from 0.0.0.0/0                                                │ │
+│  │  • ECS: 80 from ALB security group                                           │ │
+│  │  • Lambda: Outbound HTTPS only                                               │ │
 │  └───────────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 
 ╔══════════════════════════════════════════════════════════════════════════════════════╗
-║                              KEY FEATURES                                            ║
+║                              PRODUCTION FEATURES                                     ║
 ╠══════════════════════════════════════════════════════════════════════════════════════╣
-║  ✓ Secure Authentication (Cognito JWT)                                              ║
-║  ✓ AI-Powered Insights (Amazon Nova Lite/Premier)                                   ║
-║  ✓ Daily Email Digests (9 AM UTC via SES)                                           ║
-║  ✓ User Molecule Watchlists (DynamoDB)                                              ║
-║  ✓ Multi-Source Ingestion (PubMed, FDA, EMA, ClinicalTrials, WIPO)                  ║
-║  ✓ Serverless Architecture (Lambda, API Gateway, S3)                                ║
-║  ✓ Production Monitoring (CloudWatch Dashboards & Alarms)                           ║
-║  ✓ Cost-Optimized (~$10-15/month for light usage)                                   ║
+║  ✓ Application Load Balancer with health checks & auto-scaling                      ║
+║  ✓ ECS Fargate with 2-10 task auto-scaling based on CPU/memory                      ║
+║  ✓ VPC with public/private subnets and NAT Gateway                                  ║
+║  ✓ WAF with security rules and rate limiting                                        ║
+║  ✓ HTTPS/SSL with custom domain support                                             ║
+║  ✓ Container Insights for detailed monitoring                                       ║
+║  ✓ Security headers and CSP policies                                                ║
+║  ✓ Gzip compression and caching optimizations                                       ║
+║  ✓ Non-root container execution                                                     ║
+║  ✓ Blue-green deployments with zero downtime                                        ║
 ╚══════════════════════════════════════════════════════════════════════════════════════╝
 
 ╔══════════════════════════════════════════════════════════════════════════════════════╗
-║                           DATA FLOW SUMMARY                                          ║
+║                           PRODUCTION DATA FLOW                                       ║
 ╠══════════════════════════════════════════════════════════════════════════════════════╣
-║  1. EventBridge triggers ingestion Lambdas at midnight UTC                           ║
-║  2. Ingestion Lambdas fetch data from external APIs → SQS Queue                      ║
-║  3. Processor Lambda consumes SQS messages → Amazon Nova Lite analysis               ║
-║  4. AI-generated insights stored in DynamoDB InsightsTable                           ║
-║  5. EventBridge triggers Digest Lambda at 9 AM UTC                                   ║
-║  6. Digest Lambda queries user watchlists → generates personalized emails            ║
-║  7. SES sends daily digest emails to verified users                                  ║
-║  8. Users access React UI via CloudFront → Cognito auth → API Gateway               ║
-║  9. API Gateway validates JWT → Lambda functions → DynamoDB CRUD operations          ║
+║  1. User → Route53 → ALB → ECS Fargate → React App                                   ║
+║  2. React App → ALB → API Gateway → Cognito Auth → Lambda Functions                  ║
+║  3. EventBridge triggers ingestion Lambdas at midnight UTC                           ║
+║  4. Ingestion Lambdas → SQS Queue → Processor Lambda → Bedrock AI                    ║
+║  5. AI insights stored in DynamoDB with GSI optimization                             ║
+║  6. EventBridge triggers Digest Lambda at 9 AM UTC                                   ║
+║  7. Digest Lambda → User watchlists → AI summary → SES email                         ║
+║  8. WAF filters malicious traffic before reaching ALB                                ║
+║  9. Container Insights monitors ECS performance and auto-scales                      ║
+║ 10. CloudWatch alarms trigger SNS notifications for issues                           ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════════════╗
+║                              COST BREAKDOWN                                          ║
+╠══════════════════════════════════════════════════════════════════════════════════════╣
+║  Basic Deployment (~$135/month):                                                    ║
+║  • Core services (Lambda, DynamoDB, API Gateway): $50                               ║
+║  • Bedrock AI models (Claude Haiku + Sonnet): $45                                   ║
+║  • OpenSearch Serverless (RAG): $55                                                 ║
+║                                                                                      ║
+║  Production Deployment (~$285/month):                                               ║
+║  • Basic services: $135                                                             ║
+║  • ECS Fargate (2-10 tasks): $30-150                                                ║
+║  • ALB + health checks: $22                                                         ║
+║  • NAT Gateway: $45                                                                 ║
+║  • WAF: $5 + usage                                                                  ║
+║  • Enhanced monitoring: $25                                                         ║
+║                                                                                      ║
+║  ROI: 99.99% uptime, auto-scaling, enterprise security                              ║
 ╚══════════════════════════════════════════════════════════════════════════════════════╝

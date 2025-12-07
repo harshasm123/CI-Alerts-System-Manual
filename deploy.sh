@@ -218,23 +218,115 @@ deploy_stack_if_needed() {
 echo "📋 Checking and deploying stacks in order..."
 echo ""
 
-# Deploy in correct order: Core -> KB -> Agent -> Frontend -> Monitoring -> CICD
-deploy_stack_if_needed "CIAlertStack"
-deploy_stack_if_needed "CIAlert-KnowledgeBase"
-deploy_stack_if_needed "CIAlert-BedrockAgent"
-deploy_stack_if_needed "CIAlert-Frontend"
-deploy_stack_if_needed "CIAlert-Monitoring"
+# Production-grade deployment sequence
+DEPLOYED_STACKS=()
+FAILED_STACKS=()
 
-if [ "$SKIP_CICD" != true ]; then
-    deploy_stack_if_needed "CIAlert-CICD"
+deploy_stack() {
+    local stack_name=$1
+    local context_args=$2
+    local description=$3
+    echo ""
+    echo "📦 Deploying $stack_name ($description)..."
+    
+    if cdk deploy $stack_name --require-approval never $context_args; then
+        DEPLOYED_STACKS+=("$stack_name")
+        echo "✅ $stack_name deployed successfully"
+        return 0
+    else
+        FAILED_STACKS+=("$stack_name")
+        echo "❌ $stack_name failed"
+        return 1
+    fi
+}
+
+echo "🏗️ Production Deployment Sequence:"
+echo "1. Core Infrastructure (DynamoDB, Lambda, API Gateway, Cognito)"
+echo "2. Frontend (ALB, ECS Fargate, VPC, WAF)"
+echo "3. Monitoring (CloudWatch, Alarms, SNS)"
+echo "4. CI/CD Pipeline (Optional)"
+echo "5. Knowledge Base & Bedrock Agent (Manual)"
+echo ""
+
+# 1. Core Infrastructure (Foundation)
+deploy_stack "CIAlertStack" "" "Core Infrastructure"
+
+# Get outputs from core stack for frontend configuration
+if [[ " ${DEPLOYED_STACKS[@]} " =~ " CIAlertStack " ]]; then
+    echo "📋 Extracting core stack outputs..."
+    API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text 2>/dev/null || echo "")
+    USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null || echo "")
+    USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text 2>/dev/null || echo "")
+    
+    echo "  ✅ API URL: $API_URL"
+    echo "  ✅ User Pool ID: $USER_POOL_ID"
+    echo "  ✅ Client ID: $USER_POOL_CLIENT_ID"
+else
+    echo "❌ Core stack failed - cannot proceed with frontend"
+    exit 1
 fi
+
+# 2. Production Frontend (ALB + ECS Fargate)
+FRONTEND_CONTEXT="--context apiUrl=$API_URL --context userPoolId=$USER_POOL_ID --context userPoolClientId=$USER_POOL_CLIENT_ID --context region=$REGION"
+deploy_stack "CIAlert-Frontend" "$FRONTEND_CONTEXT" "Production Frontend (ALB + ECS)"
+
+# 3. Monitoring & Alerting
+deploy_stack "CIAlert-Monitoring" "" "Monitoring & Alerting"
+
+# 4. CI/CD Pipeline (Optional)
+if [ "$SKIP_CICD" != true ]; then
+    deploy_stack "CIAlert-CICD" "" "CI/CD Pipeline"
+fi
+
+# 5. Knowledge Base & Bedrock Agent (Manual setup required)
+echo ""
+echo "🧠 Manual Setup Required (CloudFormation hooks block automation):"
+echo "  ⚠️  Knowledge Base: AWS Console → Bedrock → Knowledge bases"
+echo "  ⚠️  Bedrock Agent: AWS Console → Bedrock → Agents"
+echo "  🔗 Connect: Update Lambda env vars with Agent ID and KB ID"
 
 cd ..
 
-# Step 6: Connect Knowledge Base to Agent
-echo "🔗 Connecting Knowledge Base to Bedrock Agent..."
-chmod +x connect-knowledge-base.sh
-./connect-knowledge-base.sh
+# Step 6: Production Deployment Summary
+echo ""
+echo "🎆 Production Deployment Summary"
+echo "==============================="
+echo ""
+echo "✅ Successfully Deployed (${#DEPLOYED_STACKS[@]} stacks):"
+for stack in "${DEPLOYED_STACKS[@]}"; do
+    echo "  ✓ $stack"
+done
+
+if [ ${#FAILED_STACKS[@]} -gt 0 ]; then
+    echo ""
+    echo "❌ Failed Deployments (${#FAILED_STACKS[@]} stacks):"
+    for stack in "${FAILED_STACKS[@]}"; do
+        echo "  ✗ $stack"
+    done
+fi
+
+# Get ALB URL if frontend deployed
+if [[ " ${DEPLOYED_STACKS[@]} " =~ " CIAlert-Frontend " ]]; then
+    ALB_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerURL`].OutputValue' --output text 2>/dev/null || echo "")
+    if [ -n "$ALB_URL" ]; then
+        echo ""
+        echo "🌍 Production Application URL:"
+        echo "  $ALB_URL"
+    fi
+fi
+
+echo ""
+echo "📋 Manual Bedrock Setup Instructions:"
+echo "1. AWS Console → Bedrock → Knowledge bases → Create (ci-alert-knowledge-base)"
+echo "2. AWS Console → Bedrock → Agents → Create (ci-alert-agent)"
+echo "3. Update Lambda env vars with Agent ID and KB ID"
+echo ""
+echo "🚀 Next Steps:"
+echo "1. Wait 5-10 minutes for ECS tasks to start"
+echo "2. Test application at ALB URL"
+echo "3. Enable Bedrock models for AI features"
+echo "4. Setup SES for email notifications"
+echo "5. Configure monitoring alerts"
 
 # Step 7: Get stack outputs
 echo "📋 Getting stack outputs..."

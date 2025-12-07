@@ -109,8 +109,11 @@ function App() {
   const loadWatchlist = async () => {
     try {
       const token = await getAuthToken();
-      const res = await fetch(`${API_URL}watchlist`, {
-        headers: { Authorization: token }
+      const res = await fetch(`${API_URL}watchlist?userId=${encodeURIComponent(user.username)}`, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       if (!res.ok) throw new Error('Failed to load watchlist');
       const data = await res.json();
@@ -125,7 +128,10 @@ function App() {
     try {
       const token = await getAuthToken();
       const res = await fetch(`${API_URL}insights`, {
-        headers: { Authorization: token }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       if (!res.ok) throw new Error('Failed to load insights');
       const data = await res.json();
@@ -139,8 +145,11 @@ function App() {
   const loadSettings = async () => {
     try {
       const token = await getAuthToken();
-      const res = await fetch(`${API_URL}user-settings`, {
-        headers: { Authorization: token }
+      const res = await fetch(`${API_URL}user-settings?userId=${encodeURIComponent(user.username)}`, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       if (res.ok) {
         const data = await res.json();
@@ -160,6 +169,7 @@ function App() {
     try {
       const token = await getAuthToken();
       const payload = {
+        userId: user.username,
         email: settings.notificationEmail || user.username,
         preferences: {
           email_enabled: settings.enableAlerts,
@@ -171,7 +181,10 @@ function App() {
       
       const res = await fetch(`${API_URL}user-settings`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: token },
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify(payload)
       });
       
@@ -196,8 +209,14 @@ function App() {
       const token = await getAuthToken();
       const res = await fetch(`${API_URL}watchlist`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: token },
-        body: JSON.stringify({ molecule: newMolecule })
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          userId: user.username,
+          molecule: newMolecule 
+        })
       });
       if (!res.ok) {
         const errData = await res.json();
@@ -214,9 +233,12 @@ function App() {
   const removeMolecule = async (molecule) => {
     try {
       const token = await getAuthToken();
-      await fetch(`${API_URL}watchlist?molecule=${encodeURIComponent(molecule)}`, {
+      await fetch(`${API_URL}watchlist?userId=${encodeURIComponent(user.username)}&molecule=${encodeURIComponent(molecule)}`, {
         method: 'DELETE',
-        headers: { Authorization: token }
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
       loadWatchlist();
     } catch (err) {
@@ -267,7 +289,7 @@ function App() {
 
         {activeTab === 'chat' && (
           <div className="chat-tab">
-            <Chat apiUrl={API_URL} authToken={authToken} />
+            <Chat apiUrl={API_URL} getAuthToken={getAuthToken} />
           </div>
         )}
 

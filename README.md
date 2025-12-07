@@ -406,22 +406,63 @@ CI Alert System/
 
 ---
 
-## Documentation
+## Quick Start
 
-### **Core Documentation**
-- **[QUICKSTART.md](QUICKSTART.md)** - Complete deployment guide with prerequisites
-- **[PRODUCTION_GRADE_ENHANCEMENTS.md](docs/PRODUCTION_GRADE_ENHANCEMENTS.md)** - Enterprise features and implementation
-- **[SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md)** - Detailed architecture and design decisions
+### Prerequisites
+```bash
+# Install Node.js 20+, AWS CLI, Docker
+bash prereq.sh
 
-### **Operational Guides**
-- **[CICD_GUIDE.md](docs/CICD_GUIDE.md)** - CI/CD pipeline setup and usage
-- **[EC2_DEPLOYMENT.md](docs/EC2_DEPLOYMENT.md)** - Alternative deployment options (not recommended)
-- **[FRONTEND_BACKEND_FIXES.md](docs/FRONTEND_BACKEND_FIXES.md)** - Connection troubleshooting
+# Configure AWS
+aws configure
+```
 
-### **Domain Knowledge**
-- **[USA_HEALTHCARE_COMPETITIVE_INTELLIGENCE.md](USA_HEALTHCARE_COMPETITIVE_INTELLIGENCE.md)** - Healthcare CI context
-- **[USA_MOLECULES_DATABASE.md](USA_MOLECULES_DATABASE.md)** - Pharmaceutical molecules database
-- **[HEALTHCARE_USE_CASE.md](docs/HEALTHCARE_USE_CASE.md)** - Business use cases and ROI
+### Production Deployment (Recommended)
+```bash
+# Deploy with ALB, auto-scaling, WAF, HTTPS
+bash deploy-production.sh
+```
+
+**Features:**
+- ✅ **Application Load Balancer** with health checks
+- ✅ **ECS Fargate** with auto-scaling (2-10 tasks)
+- ✅ **WAF** with security rules and rate limiting
+- ✅ **VPC** with public/private subnets
+- ✅ **HTTPS** support with custom domains
+- ✅ **Container Insights** and monitoring
+
+### Basic Deployment
+```bash
+# 1. Deploy infrastructure
+bash deploy.sh
+
+# 2. Setup email notifications
+bash "shell scripts/setup-ses.sh"
+
+# 3. Create test user
+bash "shell scripts/setup-test-user.sh"
+```
+
+### Enable Bedrock Models
+```bash
+# AWS Console → Bedrock → Model Access → Enable:
+# - anthropic.claude-3-5-sonnet-20241022-v2:0
+# - anthropic.claude-3-5-haiku-20241022
+# - amazon.titan-embed-text-v1
+```
+
+### Testing
+```bash
+# Test system
+bash "shell scripts/test.sh" system
+
+# Test individual components
+bash "shell scripts/test.sh" api
+bash "shell scripts/test.sh" cognito
+
+# Trigger ingestion
+bash trigger-ingestion.sh
+```
 
 ---
 
@@ -456,24 +497,96 @@ CI Alert System/
 - ✅ Disaster recovery and backup procedures
 - ✅ Cost optimization and resource management
 
-## Project Status: Production-Ready Enterprise System
+## Manual Bedrock Setup (Due to CloudFormation Hooks)
 
-### **🎯 Current State**
-- ✅ **Production-Grade Architecture** - Serverless, scalable, cost-optimized
-- ✅ **Enterprise Security** - WAF, Cognito, IAM, secrets management
-- ✅ **Advanced AI Pipeline** - Dual-model, A/B testing, monitoring
-- ✅ **Comprehensive Monitoring** - Real-time dashboards, alerting, SLA tracking
-- ✅ **Automated CI/CD** - Multi-environment, quality gates, security scanning
-- ✅ **Professional UI** - Material-UI, real-time updates, responsive design
+Since CloudFormation hooks block automated deployment, create these manually:
 
-### **📊 Performance Metrics**
-- **Availability:** 99.99% uptime SLA
-- **Scalability:** 0 to 10K+ users automatically
-- **Cost Efficiency:** 23% savings vs single-model approach
-- **Deployment Speed:** 15 minutes from code to production
-- **Security Score:** Enterprise-grade with automated scanning
+### **1. Create Knowledge Base**
+```bash
+# AWS Console → Bedrock → Knowledge bases → Create
+# Name: ci-alert-knowledge-base
+# S3 bucket: Use data bucket from stack outputs
+# Embedding model: amazon.titan-embed-text-v1
+```
 
-### **🚀 Ready for Enterprise Deployment**
-This system is **production-ready** and suitable for pharmaceutical companies, healthcare organizations, and enterprise environments requiring competitive intelligence capabilities with AI-powered insights.
+### **2. Create Bedrock Agent**
+```bash
+# AWS Console → Bedrock → Agents → Create
+# Name: ci-alert-agent
+# Model: anthropic.claude-3-5-sonnet-20241022-v2:0
+# Instructions: "You are a pharmaceutical competitive intelligence analyst..."
+```
 
-**Deploy now:** `./scripts/production-deploy.sh production admin@yourcompany.com`
+### **3. Connect to System**
+```bash
+# Update Lambda environment variables with IDs
+AGENT_ID="your-agent-id"
+KB_ID="your-knowledge-base-id"
+
+aws lambda update-function-configuration \
+  --function-name $(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?contains(OutputKey,`AgentFunction`)].OutputValue' --output text) \
+  --environment Variables="{AGENT_ID=$AGENT_ID,AGENT_ALIAS_ID=TSTALIASID,KNOWLEDGE_BASE_ID=$KB_ID}"
+```
+
+## Project Status: Core System Deployed
+
+### **✅ Working Components**
+- **API Gateway** with Cognito authentication
+- **DynamoDB** tables for insights/watchlist
+- **Lambda functions** for processing
+- **CloudWatch** monitoring
+- **React frontend** with authentication
+
+### **⚠️ Manual Setup Required**
+- **Knowledge Base** (OpenSearch Serverless)
+- **Bedrock Agent** (RAG chat)
+
+**Deploy core:** `bash deploy.sh`
+
+## Troubleshooting
+
+### CloudFormation Hook Issues
+If you see `AWS::EarlyValidation::ResourceExistenceCheck` errors:
+
+```bash
+# Switch to working region
+export AWS_DEFAULT_REGION=us-east-2
+aws configure set region us-east-2
+
+# Clean and redeploy
+aws cloudformation delete-stack --stack-name CDKToolkit
+bash deploy.sh
+```
+
+### Lambda Dependencies
+If Lambda functions fail with import errors:
+
+```bash
+# Fix dependencies
+cd lambdas/ingestion
+pip3 install requests boto3 -t .
+zip -r function.zip .
+aws lambda update-function-code --function-name FUNCTION_NAME --zip-file fileb://function.zip
+```
+
+### Authentication Issues
+```bash
+# Recreate test user
+USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text)
+aws cognito-idp admin-confirm-user --user-pool-id $USER_POOL_ID --username test@example.com
+```
+
+### EC2 Deployment
+For EC2 Ubuntu deployment:
+
+```bash
+# Install prerequisites
+sudo apt-get update && sudo apt-get install -y git nodejs npm python3-pip docker.io
+npm install -g aws-cdk
+
+# Clone and deploy
+git clone https://github.com/harshasm123/CI-Alerts-System-Manual.git
+cd CI-Alerts-System-Manual
+aws configure
+bash deploy.sh
+```
