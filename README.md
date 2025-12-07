@@ -91,7 +91,7 @@ See **[QUICKSTART.md](QUICKSTART.md)** for detailed instructions.
 ✅ **Secrets Management** - AWS Secrets Manager integration  
 
 ### **🤖 AI & Machine Learning**
-✅ **Dual-Model Architecture** - Claude 3.5 Haiku ($0.50/month) + Sonnet v2 ($44/month)  
+✅ **Dual-Model Architecture** - Claude 3.5 Haiku ($0.50/month) + Sonnet v3 ($44/month)  
 ✅ **RAG Knowledge Base** - OpenSearch Serverless with hybrid search  
 ✅ **Bedrock Agent** - Interactive chat with document citations  
 ✅ **A/B Testing** - Model performance comparison framework  
@@ -229,7 +229,7 @@ aws dynamodb put-item --table-name $SETTINGS_TABLE --item '{
 - CloudWatch: $3
 - **Bedrock Models:**
   - Claude 3.5 Haiku (batch): $0.50
-  - Claude 3.5 Sonnet v2 (agent): $44
+  - Claude 3.5 Sonnet v3 (agent): $44
   - Titan Embeddings: $15
 - **OpenSearch Serverless:** $55 (2 OCUs)
 
@@ -446,7 +446,7 @@ bash "shell scripts/setup-test-user.sh"
 ### Enable Bedrock Models
 ```bash
 # AWS Console → Bedrock → Model Access → Enable:
-# - anthropic.claude-3-5-sonnet-20241022-v2:0
+# - anthropic.claude-3-5-sonnet-20250106-v1:0
 # - anthropic.claude-3-5-haiku-20241022
 # - amazon.titan-embed-text-v1
 ```
@@ -513,7 +513,7 @@ Since CloudFormation hooks block automated deployment, create these manually:
 ```bash
 # AWS Console → Bedrock → Agents → Create
 # Name: ci-alert-agent
-# Model: anthropic.claude-3-5-sonnet-20241022-v2:0
+# Model: anthropic.claude-3-5-sonnet-20250106-v1:0
 # Instructions: "You are a pharmaceutical competitive intelligence analyst..."
 ```
 
