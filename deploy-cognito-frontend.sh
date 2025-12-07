@@ -8,13 +8,19 @@ API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query '
 USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text)
 USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text)
 REGION=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].Outputs[?OutputKey==`Region`].OutputValue' --output text)
-BUCKET=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`BucketName`].OutputValue' --output text)
+BUCKET=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`BucketName`].OutputValue' --output text 2>/dev/null || echo "")
 WEBSITE_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`WebsiteURL`].OutputValue' --output text 2>/dev/null || echo "")
+ALB_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerURL`].OutputValue' --output text 2>/dev/null || echo "")
 
 echo "✅ API URL: $API_URL"
 echo "✅ User Pool: $USER_POOL_ID"
 echo "✅ Region: $REGION"
-echo "✅ S3 Bucket: $BUCKET"
+if [ -n "$BUCKET" ]; then
+    echo "✅ S3 Bucket: $BUCKET"
+fi
+if [ -n "$ALB_URL" ]; then
+    echo "✅ ALB URL: $ALB_URL"
+fi
 
 # Determine project root (handle both direct execution and from shell scripts dir)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -66,8 +72,12 @@ npm install
 echo "🔨 Building React app..."
 npm run build
 
-echo "☁️ Uploading to S3..."
-aws s3 sync build/ s3://$BUCKET/ --delete
+if [ -n "$BUCKET" ]; then
+    echo "☁️ Uploading to S3..."
+    aws s3 sync build/ s3://$BUCKET/ --delete
+else
+    echo "⚠️  S3 bucket not found, skipping upload (ALB deployment uses ECR)"
+fi
 
 if [ -n "$CLOUDFRONT" ]; then
   echo "🔄 Invalidating CloudFront cache..."
@@ -79,10 +89,12 @@ fi
 echo ""
 echo "✅ Deployment complete!"
 echo ""
-if [ -n "$WEBSITE_URL" ]; then
-  echo "🌐 Frontend URL: $WEBSITE_URL"
-else
-  echo "🌐 Frontend URL: http://$BUCKET.s3-website-$REGION.amazonaws.com"
+if [ -n "$ALB_URL" ]; then
+  echo "🌐 Frontend URL (ALB): $ALB_URL"
+elif [ -n "$WEBSITE_URL" ]; then
+  echo "🌐 Frontend URL (S3): $WEBSITE_URL"
+elif [ -n "$BUCKET" ]; then
+  echo "🌐 Frontend URL (S3): http://$BUCKET.s3-website-$REGION.amazonaws.com"
 fi
 echo ""
 echo "📝 To create a test user:"
