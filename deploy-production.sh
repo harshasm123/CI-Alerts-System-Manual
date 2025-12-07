@@ -39,6 +39,15 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
+# Fix Docker permissions if needed
+if ! docker ps &> /dev/null; then
+    echo "🔧 Fixing Docker permissions..."
+    sudo usermod -aG docker $USER
+    sudo systemctl start docker
+    sudo chmod 666 /var/run/docker.sock
+    echo "⚠️  Docker permissions fixed. You may need to logout/login or run 'newgrp docker'"
+fi
+
 # Bootstrap if needed
 if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region $REGION >/dev/null 2>&1; then
     echo "🏗️ Bootstrapping CDK..."
@@ -68,6 +77,19 @@ deploy_stack() {
     fi
 }
 
+# CI/CD stack first to create ECR and build images
+deploy_stack "CIAlert-CICD"
+
+# Wait for initial image build
+if [[ " ${DEPLOYED_STACKS[@]} " =~ " CIAlert-CICD " ]]; then
+    echo "⏳ Waiting for initial Docker image build in CodeBuild..."
+    sleep 30
+    
+    # Get ECR repository URI
+    ECR_URI=$(aws cloudformation describe-stacks --stack-name CIAlert-CICD --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ECRRepositoryURI`].OutputValue' --output text 2>/dev/null || echo "")
+    echo "📦 ECR Repository: $ECR_URI"
+fi
+
 # Core stack
 deploy_stack "CIAlertStack"
 
@@ -96,6 +118,10 @@ fi
 
 if [ -n "$CERT_ARN" ]; then
     FRONTEND_CONTEXT="$FRONTEND_CONTEXT --context certificateArn=$CERT_ARN"
+fi
+
+if [ -n "$ECR_URI" ]; then
+    FRONTEND_CONTEXT="$FRONTEND_CONTEXT --context ecrUri=$ECR_URI"
 fi
 
 deploy_stack "CIAlert-Frontend" "$FRONTEND_CONTEXT"
@@ -130,6 +156,14 @@ if [ ${#FAILED_STACKS[@]} -gt 0 ]; then
 fi
 
 echo ""
+echo "📦 CI/CD Pipeline:"
+if [ -n "$ECR_URI" ]; then
+    echo "  ECR Repository: $ECR_URI"
+    echo "  CodeBuild Project: ci-alert-build"
+    echo "  CodePipeline: ci-alert-pipeline"
+fi
+
+echo ""
 echo "🌐 Production URLs:"
 if [ -n "$ALB_URL" ]; then
     echo "  Application: $ALB_URL"
@@ -143,6 +177,9 @@ fi
 
 echo ""
 echo "🏗️ Production Features Deployed:"
+echo "  ✓ CI/CD Pipeline with GitHub integration"
+echo "  ✓ ECR for container image management"
+echo "  ✓ CodeBuild for automated Docker builds"
 echo "  ✓ Application Load Balancer with health checks"
 echo "  ✓ ECS Fargate with auto-scaling (2-10 tasks)"
 echo "  ✓ VPC with public/private subnets"

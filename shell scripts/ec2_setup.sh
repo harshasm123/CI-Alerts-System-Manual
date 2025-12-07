@@ -56,7 +56,10 @@ if ! command -v docker &> /dev/null; then
     curl -fsSL https://get.docker.com -o get-docker.sh
     sudo sh get-docker.sh
     sudo usermod -aG docker ubuntu
+    sudo systemctl start docker
+    sudo chmod 666 /var/run/docker.sock
     rm get-docker.sh
+    echo "🐳 Docker installed and permissions fixed"
 fi
 
 # AWS CDK
