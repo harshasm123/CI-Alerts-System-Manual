@@ -65,6 +65,17 @@ FAILED_STACKS=()
 deploy_stack() {
     local stack_name=$1
     local context_args=$2
+    
+    # Check if stack already exists
+    if aws cloudformation describe-stacks --stack-name $stack_name --region $REGION &>/dev/null; then
+        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $stack_name --region $REGION --query 'Stacks[0].StackStatus' --output text)
+        if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" ]]; then
+            echo "✅ $stack_name already exists and is healthy ($STACK_STATUS)"
+            DEPLOYED_STACKS+=("$stack_name")
+            return 0
+        fi
+    fi
+    
     echo ""
     echo "📦 Deploying $stack_name (Production)..."
     
@@ -76,19 +87,6 @@ deploy_stack() {
         echo "❌ $stack_name failed"
     fi
 }
-
-# CI/CD stack first to create ECR and build images
-deploy_stack "CIAlert-CICD"
-
-# Wait for initial image build
-if [[ " ${DEPLOYED_STACKS[@]} " =~ " CIAlert-CICD " ]]; then
-    echo "⏳ Waiting for initial Docker image build in CodeBuild..."
-    sleep 30
-    
-    # Get ECR repository URI
-    ECR_URI=$(aws cloudformation describe-stacks --stack-name CIAlert-CICD --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ECRRepositoryURI`].OutputValue' --output text 2>/dev/null || echo "")
-    echo "📦 ECR Repository: $ECR_URI"
-fi
 
 # Core stack
 deploy_stack "CIAlertStack"

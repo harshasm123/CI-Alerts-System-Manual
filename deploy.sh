@@ -248,8 +248,27 @@ echo "4. CI/CD Pipeline (Optional)"
 echo "5. Knowledge Base & Bedrock Agent (Manual)"
 echo ""
 
+# Helper function to check and deploy stack
+check_and_deploy() {
+    local stack_name=$1
+    local context_args=$2
+    local description=$3
+    
+    if aws cloudformation describe-stacks --stack-name $stack_name --region $REGION &>/dev/null; then
+        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $stack_name --region $REGION --query 'Stacks[0].StackStatus' --output text)
+        if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" ]]; then
+            echo "✅ $stack_name already exists and is healthy ($STACK_STATUS)"
+            DEPLOYED_STACKS+=("$stack_name")
+            return 0
+        else
+            echo "⚠️  $stack_name exists but in $STACK_STATUS state, updating..."
+        fi
+    fi
+    deploy_stack "$stack_name" "$context_args" "$description"
+}
+
 # 1. Core Infrastructure (Foundation)
-deploy_stack "CIAlertStack" "" "Core Infrastructure"
+check_and_deploy "CIAlertStack" "" "Core Infrastructure"
 
 # Get outputs from core stack for frontend configuration
 if [[ " ${DEPLOYED_STACKS[@]} " =~ " CIAlertStack " ]]; then
@@ -266,16 +285,25 @@ else
     exit 1
 fi
 
-# 2. Production Frontend (ALB + ECS Fargate)
-FRONTEND_CONTEXT="--context apiUrl=$API_URL --context userPoolId=$USER_POOL_ID --context userPoolClientId=$USER_POOL_CLIENT_ID --context region=$REGION"
-deploy_stack "CIAlert-Frontend" "$FRONTEND_CONTEXT" "Production Frontend (ALB + ECS)"
+# 2. Frontend (Optional - ALB + ECS Fargate)
+read -p "Deploy Frontend stack (ALB + ECS)? (y/n): " deploy_frontend
+if [[ "$deploy_frontend" =~ ^[Yy]$ ]]; then
+    FRONTEND_CONTEXT="--context apiUrl=$API_URL --context userPoolId=$USER_POOL_ID --context userPoolClientId=$USER_POOL_CLIENT_ID --context region=$REGION"
+    check_and_deploy "CIAlert-Frontend" "$FRONTEND_CONTEXT" "Frontend (ALB + ECS)"
+fi
 
-# 3. Monitoring & Alerting
-deploy_stack "CIAlert-Monitoring" "" "Monitoring & Alerting"
+# 3. Monitoring (Optional - CloudWatch dashboards)
+read -p "Deploy Monitoring stack? (y/n): " deploy_monitoring
+if [[ "$deploy_monitoring" =~ ^[Yy]$ ]]; then
+    check_and_deploy "CIAlert-Monitoring" "" "Monitoring"
+fi
 
-# 4. CI/CD Pipeline (Optional)
+# 4. CI/CD (Optional - GitHub pipeline)
 if [ "$SKIP_CICD" != true ]; then
-    deploy_stack "CIAlert-CICD" "" "CI/CD Pipeline"
+    read -p "Deploy CI/CD stack? (y/n): " deploy_cicd
+    if [[ "$deploy_cicd" =~ ^[Yy]$ ]]; then
+        check_and_deploy "CIAlert-CICD" "" "CI/CD Pipeline"
+    fi
 fi
 
 # 5. Knowledge Base & Bedrock Agent (Manual setup required)
