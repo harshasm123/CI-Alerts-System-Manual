@@ -300,17 +300,26 @@ export class CIAlertStack extends cdk.Stack {
       maxBatchingWindow: cdk.Duration.seconds(5),
     }));
 
-    // EventBridge Rule for daily ingestion (midnight UTC)
+    // EventBridge Rule for daily ingestion (11 PM IST = 5:30 PM UTC)
     const dailyIngestionRule = new events.Rule(this, 'DailyIngestionRule', {
-      schedule: events.Schedule.cron({ hour: '0', minute: '0' }),
+      schedule: events.Schedule.cron({ hour: '17', minute: '30' }),
     });
     dailyIngestionRule.addTarget(new targets.LambdaFunction(pubmedFunction));
-    dailyIngestionRule.addTarget(new targets.LambdaFunction(clinicalTrialsFunction));
-    dailyIngestionRule.addTarget(new targets.LambdaFunction(fdaFunction));
+    
+    // Separate rules for new ingestion functions to avoid circular dependency
+    const clinicalTrialsRule = new events.Rule(this, 'ClinicalTrialsIngestionRule', {
+      schedule: events.Schedule.cron({ hour: '17', minute: '35' }),
+    });
+    clinicalTrialsRule.addTarget(new targets.LambdaFunction(clinicalTrialsFunction));
+    
+    const fdaRule = new events.Rule(this, 'FDAIngestionRule', {
+      schedule: events.Schedule.cron({ hour: '17', minute: '40' }),
+    });
+    fdaRule.addTarget(new targets.LambdaFunction(fdaFunction));
 
-    // EventBridge Rule for daily digest (9 AM UTC)
+    // EventBridge Rule for daily digest (10 AM IST = 4:30 AM UTC)
     const dailyDigestRule = new events.Rule(this, 'DailyDigestRule', {
-      schedule: events.Schedule.cron({ hour: '9', minute: '0' }),
+      schedule: events.Schedule.cron({ hour: '4', minute: '30' }),
     });
     dailyDigestRule.addTarget(new targets.LambdaFunction(digestFunction));
 
