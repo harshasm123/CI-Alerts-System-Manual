@@ -39,7 +39,8 @@ RUN apk add --no-cache curl
 # Copy built app to nginx
 COPY --from=build /app/build /usr/share/nginx/html
 
-# Copy nginx configuration
+# Remove default nginx config and copy our custom one
+RUN rm -f /etc/nginx/conf.d/default.conf
 COPY nginx.conf /etc/nginx/nginx.conf
 
 # Create health check endpoint
@@ -55,11 +56,11 @@ RUN chown -R nginx:nginx /usr/share/nginx/html && \
 RUN mkdir -p /var/run/nginx && \
     chown -R nginx:nginx /var/run/nginx
 
+# Expose port 8080 (non-privileged port)
+EXPOSE 8080
+
 # Switch to non-root user
 USER nginx
-
-# Expose port 80 (standard HTTP port)
-EXPOSE 80
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
