@@ -48,8 +48,8 @@ if ! command -v node &> /dev/null; then
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
 fi
 
-# Python 3.11
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3.11 python3.11-pip python3.11-venv python3-pip
+# Python 3 (use system default)
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv
 
 # Docker
 if ! command -v docker &> /dev/null; then
@@ -71,6 +71,10 @@ aws configure
 
 echo "✅ EC2 setup complete!"
 echo "📍 Repository location: ~/CI-Alerts-System-Manual"
+echo ""
+echo "Python version: $(python3 --version)"
+echo "Node version: $(node --version)"
+echo "Docker version: $(docker --version)"
 echo ""
 echo "Next steps:"
 echo "1. Enable Bedrock models in AWS Console"

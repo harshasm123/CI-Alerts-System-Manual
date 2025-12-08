@@ -3,7 +3,6 @@ import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { CIAlertStack } from '../lib/ci-alert-stack';
 import { FrontendStack } from '../lib/frontend-stack';
-import { MonitoringStack } from '../lib/monitoring-stack';
 import { CICDStack } from '../lib/cicd-stack';
 
 const app = new cdk.App();
@@ -30,14 +29,7 @@ new FrontendStack(app, 'CIAlert-Frontend', {
   description: 'Frontend - ALB, ECS Fargate, VPC, WAF',
 });
 
-// 3. Monitoring (deploy separately)
-new MonitoringStack(app, 'CIAlert-Monitoring', {
-  env,
-  alertEmail: process.env.ALERT_EMAIL || 'alerts@example.com',
-  description: 'Monitoring - CloudWatch dashboards, alarms, SNS',
-});
-
-// 4. CI/CD (deploy separately)
+// 3. CI/CD (deploy separately)
 new CICDStack(app, 'CIAlert-CICD', { 
   env,
   description: 'CI/CD pipeline - GitHub, CodePipeline, CodeBuild',

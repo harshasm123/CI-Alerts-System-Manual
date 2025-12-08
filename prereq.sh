@@ -58,7 +58,20 @@ if ! command -v docker &> /dev/null; then
     curl -fsSL https://get.docker.com -o get-docker.sh
     sudo sh get-docker.sh
     sudo usermod -aG docker $USER
+    sudo systemctl start docker
+    sudo systemctl enable docker
+    sudo chmod 666 /var/run/docker.sock
     rm get-docker.sh
+    echo "✅ Docker installed"
+else
+    echo "✓ Docker already installed"
+    # Fix permissions if Docker exists but has permission issues
+    if ! docker ps &>/dev/null; then
+        echo "🔧 Fixing Docker permissions..."
+        sudo usermod -aG docker $USER
+        sudo systemctl start docker
+        sudo chmod 666 /var/run/docker.sock
+    fi
 fi
 
 # Install AWS CDK
@@ -121,6 +134,16 @@ echo "   3. Wait for approval (usually instant for standard models)"
 
 echo "✅ Prerequisites setup complete!"
 echo ""
+echo "🐳 Docker Status:"
+if docker ps &>/dev/null; then
+    echo "  ✅ Docker is working"
+else
+    echo "  ⚠️  Docker needs group refresh"
+    echo "  Run: newgrp docker"
+    echo "  Or logout and login again"
+fi
+echo ""
 echo "Next steps:"
-echo "1. Enable Bedrock models: https://console.aws.amazon.com/bedrock/home#/modelaccess"
-echo "2. Run: ./deploy.sh"
+echo "1. If Docker permission error: logout and login OR run 'newgrp docker'"
+echo "2. Enable Bedrock models: https://console.aws.amazon.com/bedrock/home#/modelaccess"
+echo "3. Run: ./deploy.sh"
