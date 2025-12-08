@@ -312,6 +312,54 @@ echo "🧠 Manual Setup Required (CloudFormation hooks block automation):"
 echo "  ⚠️  Knowledge Base: AWS Console → Bedrock → Knowledge bases"
 echo "  ⚠️  Bedrock Agent: AWS Console → Bedrock → Agents"
 echo "  🔗 Connect: Update Lambda env vars with Agent ID and KB ID"
+echo ""
+echo "🔧 Fixing Bedrock Agent Permissions..."
+if aws bedrock-agent list-agents --region $REGION &>/dev/null; then
+    echo "  ✅ Bedrock Agent service is accessible"
+    
+    # Check if any agents exist and fix permissions
+    AGENTS=$(aws bedrock-agent list-agents --region $REGION --query 'agentSummaries[].agentId' --output text 2>/dev/null || echo "")
+    if [ -n "$AGENTS" ]; then
+        for AGENT_ID in $AGENTS; do
+            echo "  🔧 Fixing permissions for agent: $AGENT_ID"
+            
+            # Get agent role ARN
+            ROLE_ARN=$(aws bedrock-agent get-agent --agent-id $AGENT_ID --region $REGION --query "agent.agentResourceRoleArn" --output text 2>/dev/null || echo "")
+            if [ -n "$ROLE_ARN" ]; then
+                ROLE_NAME=$(basename $ROLE_ARN)
+                echo "    Role: $ROLE_NAME"
+                
+                # Apply Bedrock permissions policy
+                aws iam put-role-policy --role-name $ROLE_NAME --policy-name BedrockAgentPolicy --policy-document '{
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Action": [
+                                "bedrock:InvokeModel",
+                                "bedrock:InvokeModelWithResponseStream"
+                            ],
+                            "Resource": [
+                                "arn:aws:bedrock:'$REGION'::foundation-model/anthropic.claude-3-5-haiku-20241022-v1:0",
+                                "arn:aws:bedrock:'$REGION'::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
+                                "arn:aws:bedrock:'$REGION'::foundation-model/amazon.nova-premier-v1:0"
+                            ]
+                        },
+                        {
+                            "Effect": "Allow",
+                            "Action": "lambda:InvokeFunction",
+                            "Resource": "arn:aws:lambda:'$REGION':'$ACCOUNT_ID':function:*"
+                        }
+                    ]
+                }' 2>/dev/null && echo "    ✅ Permissions updated" || echo "    ⚠️  Permission update failed"
+            fi
+        done
+    else
+        echo "  ℹ️  No agents found - create manually in console"
+    fi
+else
+    echo "  ⚠️  Bedrock Agent service not accessible in $REGION"
+fi
 
 cd ..
 
@@ -345,9 +393,20 @@ fi
 
 echo ""
 echo "📋 Manual Bedrock Setup Instructions:"
-echo "1. AWS Console → Bedrock → Knowledge bases → Create (ci-alert-knowledge-base)"
-echo "2. AWS Console → Bedrock → Agents → Create (ci-alert-agent)"
-echo "3. Update Lambda env vars with Agent ID and KB ID"
+echo "1. Enable Models: AWS Console → Bedrock → Model Access"
+echo "   - anthropic.claude-3-5-haiku-20241022-v1:0 ✓"
+echo "   - anthropic.claude-3-sonnet-20240229-v1:0 ✓"
+echo "   - amazon.titan-embed-text-v1 ✓"
+echo "2. Create Knowledge Base: AWS Console → Bedrock → Knowledge bases"
+echo "   - Name: ci-alert-knowledge-base"
+echo "   - S3 bucket: $DATA_BUCKET"
+echo "   - Embedding: amazon.titan-embed-text-v1"
+echo "3. Create Agent: AWS Console → Bedrock → Agents"
+echo "   - Name: ci-alert-agent"
+echo "   - Model: anthropic.claude-3-5-haiku-20241022-v1:0"
+echo "   - Action groups: Use JSON schema from README"
+echo "4. Update Lambda env vars with Agent ID and KB ID"
+echo "5. Test agent permissions (should be auto-fixed by this script)"
 echo ""
 echo "🚀 Next Steps:"
 echo "1. Wait 5-10 minutes for ECS tasks to start"
@@ -405,10 +464,20 @@ echo "  # Trigger ingestion"
 echo "  aws lambda invoke --function-name CIAlertStack-PubMedFunction --region $REGION response.json"
 echo ""
 echo "📝 Next Steps:"
-echo "1. Enable Bedrock models: AWS Console → Bedrock → Model Access → Enable Claude 3.5 Sonnet v2 + Claude 3.5 Haiku + Titan Embeddings"
-echo "2. Upload sample data: ./upload-sample-data.sh"
-echo "3. Deploy frontend: bash deploy-cognito-frontend.sh"
-echo "4. Create test user (see QUICKSTART.md)"
+echo "1. Enable Bedrock models: AWS Console → Bedrock → Model Access → Enable Claude 3.5 Haiku + Claude 3 Sonnet + Titan Embeddings"
+echo "2. Create Bedrock Agent manually (CloudFormation hooks prevent automation):"
+echo "   - AWS Console → Bedrock → Agents → Create agent"
+echo "   - Name: ci-alert-agent"
+echo "   - Model: anthropic.claude-3-5-haiku-20241022-v1:0 (recommended)"
+echo "   - Instructions: You are a pharmaceutical competitive intelligence analyst..."
+echo "3. Create Knowledge Base manually:"
+echo "   - AWS Console → Bedrock → Knowledge bases → Create"
+echo "   - Name: ci-alert-knowledge-base"
+echo "   - S3 bucket: Use data bucket from stack outputs"
+echo "   - Embedding model: amazon.titan-embed-text-v1"
+echo "4. Upload sample data: ./upload-sample-data.sh"
+echo "5. Deploy frontend: bash deploy-cognito-frontend.sh"
+echo "6. Create test user (see QUICKSTART.md)"
 if [ "$SKIP_CICD" = true ]; then
     echo "4. Setup GitHub token to deploy CICD: aws secretsmanager create-secret --name github-token --secret-string YOUR_TOKEN --region $REGION"
     echo "5. Deploy CICD: cd infrastructure && cdk deploy CIAlert-CICD"
