@@ -76,6 +76,9 @@ def get_user_settings(user_id):
             # Return default settings if user doesn't exist
             settings = get_default_settings(user_id)
         
+        # Convert Decimal to float for JSON serialization
+        settings = convert_decimals(settings)
+        
         return {
             'statusCode': 200,
             'headers': get_cors_headers(),
@@ -238,6 +241,31 @@ def validate_time_format(time_str):
         return 0 <= hour <= 23 and 0 <= minute <= 59
     except Exception:
         return False
+
+def convert_decimals(obj):
+    """
+    Convert Decimal objects to float for JSON serialization
+    """
+    if isinstance(obj, list):
+        return [convert_decimals(i) for i in obj]
+    elif isinstance(obj, dict):
+        return {k: convert_decimals(v) for k, v in obj.items()}
+    elif isinstance(obj, Decimal):
+        return float(obj)
+    else:
+        return obj
+
+def convert_decimals(obj):
+    """
+    Convert Decimal to float for JSON serialization
+    """
+    if isinstance(obj, list):
+        return [convert_decimals(i) for i in obj]
+    elif isinstance(obj, dict):
+        return {k: convert_decimals(v) for k, v in obj.items()}
+    elif isinstance(obj, Decimal):
+        return float(obj)
+    return obj
 
 def get_cors_headers():
     """
