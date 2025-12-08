@@ -57,15 +57,22 @@ export class FrontendStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // Build Docker image from frontend directory
+    // Build Docker image from frontend directory with build args
+    const apiUrl = props?.apiUrl || '';
+    const userPoolId = props?.userPoolId || '';
+    const userPoolClientId = props?.userPoolClientId || '';
+    
     const frontendImage = new ecr_assets.DockerImageAsset(this, 'FrontendImage', {
       directory: path.join(__dirname, '../../frontend'),
       file: 'Dockerfile',
       buildArgs: {
-        REACT_APP_API_URL: props?.apiUrl || '',
-        REACT_APP_USER_POOL_ID: props?.userPoolId || '',
-        REACT_APP_USER_POOL_CLIENT_ID: props?.userPoolClientId || '',
+        REACT_APP_API_URL: apiUrl,
+        REACT_APP_USER_POOL_ID: userPoolId,
+        REACT_APP_USER_POOL_CLIENT_ID: userPoolClientId,
         REACT_APP_REGION: this.region,
+      },
+      invalidation: {
+        buildArgs: true,
       },
     });
 
@@ -86,13 +93,6 @@ export class FrontendStack extends cdk.Stack {
         logGroup,
         streamPrefix: 'frontend',
       }),
-      environment: {
-        REACT_APP_API_URL: props?.apiUrl || 'https://api.example.com/',
-        REACT_APP_USER_POOL_ID: props?.userPoolId || 'us-east-1_XXXXXXXXX',
-        REACT_APP_USER_POOL_CLIENT_ID: props?.userPoolClientId || 'xxxxxxxxxx',
-        REACT_APP_REGION: this.region,
-        NODE_ENV: 'production',
-      },
       healthCheck: {
         command: ['CMD-SHELL', 'curl -f http://localhost:8080/ || exit 1'],
         interval: cdk.Duration.seconds(30),
