@@ -21,9 +21,8 @@ ENV GENERATE_SOURCEMAP=false
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies with clean install for production
-RUN npm ci --only=production --silent
-RUN npm install --only=dev --silent
+# Install all dependencies
+RUN npm install --silent
 
 # Copy source code
 COPY . .
