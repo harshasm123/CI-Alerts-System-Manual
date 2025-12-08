@@ -1,20 +1,21 @@
 #!/bin/bash
 
 # Fix TypeScript compilation errors
-# Clean cache and rebuild
+# This solves the "Cannot find name 'cloudfront'" errors
 
-echo "🧹 Cleaning TypeScript cache..."
+echo "🔧 Fixing TypeScript compilation..."
 cd infrastructure
 
-# Remove compiled files
-rm -rf node_modules
-rm -rf dist
-rm -f *.tsbuildinfo
+echo "📦 Step 1: Cleaning old modules..."
+rm -rf node_modules dist *.tsbuildinfo package-lock.json 2>/dev/null || true
 
-echo "📦 Reinstalling dependencies..."
+echo "📥 Step 2: Installing dependencies..."
 npm install
 
-echo "🔨 Rebuilding TypeScript..."
+echo "🔨 Step 3: Rebuilding TypeScript..."
 npm run build
 
-echo "✅ Build complete!"
+echo "✅ Build complete! Ready to deploy."
+echo ""
+echo "Next step:"
+echo "AWS_REGION=us-west-2 cdk deploy CIAlert-Frontend --require-approval never"
