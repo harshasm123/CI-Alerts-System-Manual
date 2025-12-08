@@ -355,18 +355,17 @@ export class FrontendStack extends cdk.Stack {
         cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD_OPTIONS,
       },
       // Security and performance settings
-      minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021_06,
+      minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
       enabled: true,
       enableIpv6: true,
       enableLogging: true,
       logBucket: undefined, // Use default CloudFront logging
       logFilePrefix: 'cloudfront-logs/',
-      enableLogRetention: true,
-      logRetention: logs.RetentionDays.ONE_MONTH,
+
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // North America, Europe, Asia
       webAclId: cloudfrontWebAcl.attrArn,
       // Caching and compression
-      httpVersion: cloudfront.HttpVersion.HTTP2AND3,
+      httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
       // Custom domain if provided
       domainNames: props?.domainName ? [props.domainName] : undefined,
       certificate: props?.cloudFrontCertificateArn
