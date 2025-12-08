@@ -281,6 +281,11 @@ header h1 {
   border-left: 4px solid #667eea;
 }
 
+.insight-card p {
+  white-space: pre-line;
+  line-height: 1.8;
+}
+
 .insight-header {
   display: flex;
   justify-content: space-between;

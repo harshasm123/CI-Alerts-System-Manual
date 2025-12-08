@@ -118,7 +118,6 @@ function Chat({ apiUrl, getAuthToken }) {
       <div className="chat-header">
         <div className="header-content">
           <h2>🤖 AI Assistant</h2>
-          <p>Powered by AWS Bedrock Agent with RAG Knowledge Base</p>
         </div>
         <div className="header-controls">
           <select 

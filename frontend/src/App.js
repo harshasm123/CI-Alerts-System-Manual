@@ -370,7 +370,7 @@ function App() {
               </div>
             ) : (
               <div className="insights-list">
-                {insights.map((insight, i) => (
+                {insights.filter(insight => !insight.summary?.startsWith('```json')).map((insight, i) => (
                   <div key={i} className="insight-card">
                     <div className="insight-header">
                       <strong>{insight.molecule}</strong>
