@@ -12,7 +12,7 @@ rm -rf infrastructure/cdk.out
 echo "🚀 Deploying frontend with build args..."
 cd infrastructure
 npx cdk deploy CIAlert-Frontend \
-  --context apiUrl=https://ekwaqr0pde.execute-api.us-west-2.amazonaws.com/prod/ \
+  --context apiUrl=https://ndqszfo7nj.execute-api.us-west-2.amazonaws.com/prod/ \
   --context userPoolId=us-west-2_qm5TpguBr \
   --context userPoolClientId=$CLIENT_ID \
   --context region=us-west-2 \

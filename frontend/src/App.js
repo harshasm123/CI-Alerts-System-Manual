@@ -4,10 +4,14 @@ import { signIn, signUp, signOut, getCurrentUser, fetchAuthSession } from 'aws-a
 import Chat from './Chat';
 import './App.css';
 
-const API_URL = process.env.REACT_APP_API_URL;
-const USER_POOL_ID = process.env.REACT_APP_USER_POOL_ID;
-const USER_POOL_CLIENT_ID = process.env.REACT_APP_USER_POOL_CLIENT_ID;
-const REGION = process.env.REACT_APP_REGION;
+const API_URL = process.env.REACT_APP_API_URL || window.APP_CONFIG?.API_URL;
+const USER_POOL_ID = process.env.REACT_APP_USER_POOL_ID || window.APP_CONFIG?.USER_POOL_ID;
+const USER_POOL_CLIENT_ID = process.env.REACT_APP_USER_POOL_CLIENT_ID || window.APP_CONFIG?.USER_POOL_CLIENT_ID;
+const REGION = process.env.REACT_APP_REGION || window.APP_CONFIG?.REGION || 'us-west-2';
+
+if (!API_URL || !USER_POOL_ID || !USER_POOL_CLIENT_ID) {
+  console.error('❌ Auth UserPool not configured', { API_URL, USER_POOL_ID, USER_POOL_CLIENT_ID });
+}
 
 Amplify.configure({
   Auth: {
