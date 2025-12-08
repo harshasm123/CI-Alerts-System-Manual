@@ -10,7 +10,7 @@ AGENT_ALIAS_ID = os.environ['AGENT_ALIAS_ID']
 
 def lambda_handler(event, context):
     body = json.loads(event.get('body', '{}'))
-    query = body.get('query', '')
+    query = body.get('query') or body.get('message', '')
     session_id = body.get('sessionId') or str(uuid.uuid4())
     
     if not query:
