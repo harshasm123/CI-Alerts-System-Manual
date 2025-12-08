@@ -209,11 +209,6 @@ export class CIAlertStack extends cdk.Stack {
       },
     });
 
-    // Grant watchlist function permission to invoke ingestion functions
-    pubmedFunction.grantInvoke(lambdaRole);
-    clinicalTrialsFunction.grantInvoke(lambdaRole);
-    fdaFunction.grantInvoke(lambdaRole);
-
     const insightsFunction = new lambda.Function(this, 'InsightsFunction', {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: 'insights_api.lambda_handler',
@@ -318,6 +313,11 @@ export class CIAlertStack extends cdk.Stack {
       schedule: events.Schedule.cron({ hour: '9', minute: '0' }),
     });
     dailyDigestRule.addTarget(new targets.LambdaFunction(digestFunction));
+
+    // Grant watchlist function permission to invoke ingestion functions
+    pubmedFunction.grantInvoke(lambdaRole);
+    clinicalTrialsFunction.grantInvoke(lambdaRole);
+    fdaFunction.grantInvoke(lambdaRole);
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
