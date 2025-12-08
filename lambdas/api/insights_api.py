@@ -32,9 +32,7 @@ def lambda_handler(event, context):
         else:
             # Get recent insights across all molecules
             response = table.scan(
-                Limit=limit,
-                # Sort by timestamp if available
-                ScanIndexForward=False
+                Limit=limit
             )
         
         items = response.get('Items', [])
