@@ -203,9 +203,6 @@ export class CIAlertStack extends cdk.Stack {
       role: lambdaRole,
       environment: {
         WATCHLIST_TABLE: watchlistTable.tableName,
-        PUBMED_FUNCTION: pubmedFunction.functionName,
-        CLINICALTRIALS_FUNCTION: clinicalTrialsFunction.functionName,
-        FDA_FUNCTION: fdaFunction.functionName,
       },
     });
 
@@ -322,11 +319,6 @@ export class CIAlertStack extends cdk.Stack {
       schedule: events.Schedule.cron({ hour: '4', minute: '30' }),
     });
     dailyDigestRule.addTarget(new targets.LambdaFunction(digestFunction));
-
-    // Grant watchlist function permission to invoke ingestion functions
-    pubmedFunction.grantInvoke(lambdaRole);
-    clinicalTrialsFunction.grantInvoke(lambdaRole);
-    fdaFunction.grantInvoke(lambdaRole);
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
