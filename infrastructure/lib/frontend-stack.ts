@@ -61,6 +61,12 @@ export class FrontendStack extends cdk.Stack {
     const frontendImage = new ecr_assets.DockerImageAsset(this, 'FrontendImage', {
       directory: path.join(__dirname, '../../frontend'),
       file: 'Dockerfile',
+      buildArgs: {
+        REACT_APP_API_URL: props?.apiUrl || '',
+        REACT_APP_USER_POOL_ID: props?.userPoolId || '',
+        REACT_APP_USER_POOL_CLIENT_ID: props?.userPoolClientId || '',
+        REACT_APP_REGION: this.region,
+      },
     });
 
     // Fargate Task Definition with proper resource allocation
