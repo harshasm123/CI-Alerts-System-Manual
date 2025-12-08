@@ -37,10 +37,6 @@ FROM nginx:1.25-alpine
 # Install curl for health checks
 RUN apk add --no-cache curl
 
-# Create nginx user and set permissions
-RUN addgroup -g 101 -S nginx && \
-    adduser -S -D -H -u 101 -h /var/cache/nginx -s /sbin/nologin -G nginx -g nginx nginx
-
 # Copy built app to nginx
 COPY --from=build /app/build /usr/share/nginx/html
 
