@@ -2,6 +2,7 @@ import json
 import os
 import boto3
 from datetime import datetime
+from decimal import Decimal
 
 # AWS clients
 dynamodb = boto3.resource('dynamodb')
@@ -140,7 +141,7 @@ def update_user_settings(user_id, event):
             if 'min_relevance' in preferences:
                 min_rel = float(preferences['min_relevance'])
                 if 0.0 <= min_rel <= 1.0:
-                    current_prefs['min_relevance'] = min_rel
+                    current_prefs['min_relevance'] = Decimal(str(min_rel))
                 else:
                     return {
                         'statusCode': 400,
@@ -214,7 +215,7 @@ def get_default_settings(user_id):
         'timezone': 'UTC',
         'preferences': {
             'email_enabled': True,
-            'min_relevance': 0.5,
+            'min_relevance': Decimal('0.5'),
             'sources': ['PubMed', 'ClinicalTrials.gov', 'FDA', 'EMA', 'WIPO'],
             'impact_levels': ['HIGH', 'MEDIUM', 'LOW']
         },
