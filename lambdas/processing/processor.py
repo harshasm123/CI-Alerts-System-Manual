@@ -48,7 +48,36 @@ def lambda_handler(event, context):
             )
             
             result = json.loads(response['body'].read())
-            insights = result['output']['message']['content'][0]['text']
+            raw_insights = result['output']['message']['content'][0]['text']
+            
+            # Parse JSON response and create formatted summary
+            try:
+                # Extract JSON from markdown code blocks if present
+                if '```json' in raw_insights:
+                    json_str = raw_insights.split('```json')[1].split('```')[0].strip()
+                elif '```' in raw_insights:
+                    json_str = raw_insights.split('```')[1].split('```')[0].strip()
+                else:
+                    json_str = raw_insights
+                
+                insight_data = json.loads(json_str)
+                
+                # Create formatted summary
+                summary = f"{insight_data.get('Headline', 'No headline')}"
+                summary += f"\n\nSentiment: {insight_data.get('Sentiment', 'Unknown')}"
+                
+                risks = insight_data.get('Key Risks', insight_data.get('Key_Risks', []))
+                if risks:
+                    summary += "\n\nKey Risks:\n" + "\n".join([f"• {r}" for r in risks[:2]])
+                
+                opps = insight_data.get('Key Opportunities', insight_data.get('Key_Opportunities', []))
+                if opps:
+                    summary += "\n\nKey Opportunities:\n" + "\n".join([f"• {o}" for o in opps[:2]])
+                
+                insights = summary
+            except:
+                # Fallback to raw text if JSON parsing fails
+                insights = raw_insights[:500]
             
             # Store in DynamoDB
             timestamp = datetime.utcnow().isoformat()
@@ -57,7 +86,7 @@ def lambda_handler(event, context):
                 'timestamp': timestamp,
                 'insights': insights,
                 'source': source,
-                'raw_content': content[:1000]  # Store first 1000 chars
+                'raw_content': content[:1000]
             })
             
             print(f"Processed insights for {molecule}")

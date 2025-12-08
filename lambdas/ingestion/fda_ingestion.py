@@ -2,187 +2,162 @@ import json
 import os
 import boto3
 import requests
-import feedparser
 from datetime import datetime, timedelta
-import uuid
-from bs4 import BeautifulSoup
 
 sqs = boto3.client('sqs')
 s3 = boto3.client('s3')
 
-QUEUE_URL = os.environ['RAW_EVENT_QUEUE_URL']
+QUEUE_URL = os.environ['QUEUE_URL']
 DATA_BUCKET = os.environ['DATA_BUCKET']
 
-# FDA RSS feeds and API endpoints
-FDA_SOURCES = [
-    {
-        'name': 'FDA Drug Approvals',
-        'url': 'https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/drug-approvals-and-databases/rss.xml',
-        'type': 'rss'
-    },
-    {
-        'name': 'FDA Safety Alerts',
-        'url': 'https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/fda-drug-safety-communications/rss.xml',
-        'type': 'rss'
-    },
-    {
-        'name': 'FDA News Releases',
-        'url': 'https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/press-announcements/rss.xml',
-        'type': 'rss'
+DEFAULT_MOLECULES = [
+    'Humira', 'Keytruda', 'Revlimid', 'Eliquis', 'Opdivo',
+    'Eylea', 'Dupixent', 'Xtandi', 'Ibrance', 'Imbruvica'
+]
+
+def lambda_handler(event, context):
+    """Fetch FDA drug data from openFDA API"""
+    
+    molecules = event.get('molecules', DEFAULT_MOLECULES)
+    if isinstance(molecules, str):
+        molecules = [molecules]
+    
+    results = []
+    
+    for molecule in molecules:
+        try:
+            # Fetch drug labels and adverse events
+            labels = fetch_drug_labels(molecule)
+            events = fetch_adverse_events(molecule)
+            
+            count = len(labels) + len(events)
+            if count > 0:
+                for item in labels + events:
+                    send_to_queue(item)
+                results.append(f"Processed {count} FDA records for {molecule}")
+            else:
+                results.append(f"No FDA data found for {molecule}")
+        except Exception as e:
+            print(f"Error processing {molecule}: {str(e)}")
+            results.append(f"Error for {molecule}: {str(e)}")
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps({
+            'message': 'FDA ingestion complete',
+            'results': results
+        })
     }
-]
 
-# Common pharmaceutical molecules to filter for
-MOLECULES = [
-    'pembrolizumab', 'nivolumab', 'atezolizumab', 'durvalumab',
-    'adalimumab', 'infliximab', 'rituximab', 'trastuzumab',
-    'bevacizumab', 'cetuximab', 'panitumumab', 'ramucirumab',
-    'lenalidomide', 'ibrutinib', 'venetoclax', 'osimertinib',
-    'keytruda', 'opdivo', 'tecentriq', 'imfinzi', 'humira',
-    'remicade', 'rituxan', 'herceptin', 'avastin', 'erbitux'
-]
-
-def handler(event, context):
-    """
-    Fetch recent FDA announcements and filter for pharmaceutical molecules
-    """
+def fetch_drug_labels(molecule):
+    """Fetch drug labels from openFDA API"""
+    
+    base_url = "https://api.fda.gov/drug/label.json"
+    params = {
+        'search': f'openfda.brand_name:"{molecule}" OR openfda.generic_name:"{molecule}"',
+        'limit': 5
+    }
+    
     try:
-        results = []
-        
-        # Calculate date range (last 7 days)
-        cutoff_date = datetime.now() - timedelta(days=7)
-        
-        for source in FDA_SOURCES:
-            try:
-                if source['type'] == 'rss':
-                    items = fetch_rss_feed(source['url'], source['name'])
-                    
-                    for item in items:
-                        # Check if item is recent
-                        if item.get('published_date'):
-                            try:
-                                pub_date = datetime.fromisoformat(item['published_date'].replace('Z', '+00:00'))
-                                if pub_date < cutoff_date:
-                                    continue
-                            except:
-                                pass  # If date parsing fails, include the item
-                        
-                        # Check if item mentions any molecules
-                        relevant_molecules = find_relevant_molecules(item)
-                        
-                        if relevant_molecules:
-                            for molecule in relevant_molecules:
-                                # Create event payload
-                                event_data = {
-                                    'source': 'FDA',
-                                    'source_detail': source['name'],
-                                    'molecule': molecule,
-                                    'title': item.get('title', ''),
-                                    'description': item.get('description', ''),
-                                    'content': item.get('content', ''),
-                                    'url': item.get('url', ''),
-                                    'published_date': item.get('published_date', ''),
-                                    'timestamp': datetime.now().isoformat(),
-                                    'event_id': str(uuid.uuid4())
-                                }
-                                
-                                # Send to SQS
-                                sqs.send_message(
-                                    QueueUrl=QUEUE_URL,
-                                    MessageBody=json.dumps(event_data),
-                                    MessageAttributes={
-                                        'source': {'StringValue': 'FDA', 'DataType': 'String'},
-                                        'molecule': {'StringValue': molecule, 'DataType': 'String'}
-                                    }
-                                )
-                                
-                                results.append(event_data)
-                    
-            except Exception as e:
-                print(f"Error processing FDA source {source['name']}: {str(e)}")
-                continue
-        
-        # Store raw data in S3
-        s3_key = f"raw/fda/{datetime.now().strftime('%Y/%m/%d')}/{datetime.now().strftime('%H%M%S')}.json"
-        s3.put_object(
-            Bucket=DATA_BUCKET,
-            Key=s3_key,
-            Body=json.dumps(results, indent=2),
-            ContentType='application/json'
-        )
-        
-        return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'message': f'Successfully processed {len(results)} FDA items',
-                'items_count': len(results),
-                's3_location': f's3://{DATA_BUCKET}/{s3_key}'
-            })
-        }
-        
-    except Exception as e:
-        print(f"Error in FDA ingestion: {str(e)}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
-
-def fetch_rss_feed(url, source_name):
-    """
-    Fetch and parse RSS feed
-    """
-    try:
-        response = requests.get(url, timeout=30)
+        response = requests.get(base_url, params=params, timeout=30)
         response.raise_for_status()
+        data = response.json()
         
-        feed = feedparser.parse(response.content)
-        items = []
-        
-        for entry in feed.entries:
-            # Extract content
-            content = ''
-            if hasattr(entry, 'content') and entry.content:
-                content = entry.content[0].value if isinstance(entry.content, list) else entry.content
-            elif hasattr(entry, 'summary'):
-                content = entry.summary
+        labels = []
+        for result in data.get('results', []):
+            openfda = result.get('openfda', {})
             
-            # Clean HTML content
-            if content:
-                soup = BeautifulSoup(content, 'html.parser')
-                content = soup.get_text(strip=True)
-            
-            item = {
-                'title': getattr(entry, 'title', ''),
-                'description': getattr(entry, 'summary', ''),
-                'content': content,
-                'url': getattr(entry, 'link', ''),
-                'published_date': getattr(entry, 'published', '')
+            label = {
+                'molecule': molecule,
+                'source': 'FDA Drug Labels',
+                'title': f"FDA Label: {openfda.get('brand_name', [molecule])[0] if openfda.get('brand_name') else molecule}",
+                'content': '\n\n'.join([
+                    result.get('purpose', [''])[0] if result.get('purpose') else '',
+                    result.get('indications_and_usage', [''])[0] if result.get('indications_and_usage') else '',
+                    result.get('warnings', [''])[0] if result.get('warnings') else ''
+                ]),
+                'url': 'https://www.fda.gov/drugs',
+                'metadata': {
+                    'brand_name': openfda.get('brand_name', []),
+                    'generic_name': openfda.get('generic_name', []),
+                    'manufacturer': openfda.get('manufacturer_name', []),
+                    'product_type': openfda.get('product_type', [])
+                },
+                'timestamp': datetime.now().isoformat()
             }
             
-            items.append(item)
+            labels.append(label)
         
-        return items
+        return labels
         
     except Exception as e:
-        print(f"Error fetching RSS feed {url}: {str(e)}")
+        print(f"Error fetching FDA labels for {molecule}: {str(e)}")
         return []
 
-def find_relevant_molecules(item):
-    """
-    Find pharmaceutical molecules mentioned in the item
-    """
-    relevant_molecules = []
+def fetch_adverse_events(molecule):
+    """Fetch adverse events from openFDA API"""
     
-    # Combine all text content
-    text_content = ' '.join([
-        item.get('title', ''),
-        item.get('description', ''),
-        item.get('content', '')
-    ]).lower()
+    base_url = "https://api.fda.gov/drug/event.json"
     
-    # Check for molecule mentions
-    for molecule in MOLECULES:
-        if molecule.lower() in text_content:
-            relevant_molecules.append(molecule)
+    # Get events from last 90 days
+    date_90_days_ago = (datetime.now() - timedelta(days=90)).strftime('%Y%m%d')
     
-    return list(set(relevant_molecules))  # Remove duplicates
+    params = {
+        'search': f'patient.drug.openfda.brand_name:"{molecule}" AND receivedate:[{date_90_days_ago} TO 99991231]',
+        'count': 'patient.reaction.reactionmeddrapt.exact',
+        'limit': 10
+    }
+    
+    try:
+        response = requests.get(base_url, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        events = []
+        results = data.get('results', [])[:5]  # Top 5 reactions
+        
+        if results:
+            reactions = [f"{r['term']}: {r['count']} reports" for r in results]
+            
+            event = {
+                'molecule': molecule,
+                'source': 'FDA Adverse Events',
+                'title': f"Recent Adverse Events: {molecule}",
+                'content': f"Top adverse reactions reported in last 90 days:\n\n" + '\n'.join(reactions),
+                'url': 'https://www.fda.gov/safety/medwatch-fda-safety-information-and-adverse-event-reporting-program',
+                'metadata': {
+                    'reactions': results,
+                    'period': '90 days'
+                },
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            events.append(event)
+        
+        return events
+        
+    except Exception as e:
+        print(f"Error fetching FDA adverse events for {molecule}: {str(e)}")
+        return []
+
+def send_to_queue(item):
+    """Send FDA data to SQS for processing"""
+    
+    message = {
+        'molecule': item['molecule'],
+        'source': item['source'],
+        'title': item['title'],
+        'content': item['content'][:2000],  # Limit content size
+        'url': item['url'],
+        'metadata': item['metadata'],
+        'timestamp': item['timestamp']
+    }
+    
+    try:
+        sqs.send_message(
+            QueueUrl=QUEUE_URL,
+            MessageBody=json.dumps(message)
+        )
+        print(f"Sent FDA data to queue: {item['title']}")
+    except Exception as e:
+        print(f"Error sending to queue: {str(e)}")

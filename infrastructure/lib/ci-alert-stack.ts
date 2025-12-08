@@ -139,6 +139,46 @@ export class CIAlertStack extends cdk.Stack {
       },
     });
 
+    const clinicalTrialsFunction = new lambda.Function(this, 'ClinicalTrialsFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'clinicaltrials_ingestion.lambda_handler',
+      code: lambda.Code.fromAsset('../lambdas/ingestion', {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+          command: [
+            'bash', '-c',
+            'pip install -r requirements.txt -t /asset-output && cp -au . /asset-output'
+          ],
+        },
+      }),
+      timeout: cdk.Duration.seconds(60),
+      role: lambdaRole,
+      environment: {
+        QUEUE_URL: eventQueue.queueUrl,
+        DATA_BUCKET: dataBucket.bucketName,
+      },
+    });
+
+    const fdaFunction = new lambda.Function(this, 'FDAFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'fda_ingestion.lambda_handler',
+      code: lambda.Code.fromAsset('../lambdas/ingestion', {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+          command: [
+            'bash', '-c',
+            'pip install -r requirements.txt -t /asset-output && cp -au . /asset-output'
+          ],
+        },
+      }),
+      timeout: cdk.Duration.seconds(60),
+      role: lambdaRole,
+      environment: {
+        QUEUE_URL: eventQueue.queueUrl,
+        DATA_BUCKET: dataBucket.bucketName,
+      },
+    });
+
     // Daily Digest Lambda
     const digestFunction = new lambda.Function(this, 'DigestFunction', {
       runtime: lambda.Runtime.PYTHON_3_12,
@@ -163,8 +203,16 @@ export class CIAlertStack extends cdk.Stack {
       role: lambdaRole,
       environment: {
         WATCHLIST_TABLE: watchlistTable.tableName,
+        PUBMED_FUNCTION: pubmedFunction.functionName,
+        CLINICALTRIALS_FUNCTION: clinicalTrialsFunction.functionName,
+        FDA_FUNCTION: fdaFunction.functionName,
       },
     });
+
+    // Grant watchlist function permission to invoke ingestion functions
+    pubmedFunction.grantInvoke(lambdaRole);
+    clinicalTrialsFunction.grantInvoke(lambdaRole);
+    fdaFunction.grantInvoke(lambdaRole);
 
     const insightsFunction = new lambda.Function(this, 'InsightsFunction', {
       runtime: lambda.Runtime.PYTHON_3_12,
@@ -262,6 +310,8 @@ export class CIAlertStack extends cdk.Stack {
       schedule: events.Schedule.cron({ hour: '0', minute: '0' }),
     });
     dailyIngestionRule.addTarget(new targets.LambdaFunction(pubmedFunction));
+    dailyIngestionRule.addTarget(new targets.LambdaFunction(clinicalTrialsFunction));
+    dailyIngestionRule.addTarget(new targets.LambdaFunction(fdaFunction));
 
     // EventBridge Rule for daily digest (9 AM UTC)
     const dailyDigestRule = new events.Rule(this, 'DailyDigestRule', {
