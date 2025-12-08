@@ -8,15 +8,12 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as route53targets from 'aws-cdk-lib/aws-route53-targets';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
-import * as cloudfrontOrigins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as path from 'path';
 import { Construct } from 'constructs';
 
 export interface FrontendStackProps extends cdk.StackProps {
   readonly domainName?: string;
   readonly certificateArn?: string;
-  readonly cloudFrontCertificateArn?: string;
   readonly apiUrl?: string;
   readonly userPoolId?: string;
   readonly userPoolClientId?: string;
@@ -25,8 +22,6 @@ export interface FrontendStackProps extends cdk.StackProps {
 export class FrontendStack extends cdk.Stack {
   public readonly loadBalancerUrl: string;
   public readonly albDnsName: string;
-  public readonly cloudFrontUrl: string;
-  public readonly cloudFrontDomainName: string;
   constructor(scope: Construct, id: string, props?: FrontendStackProps) {
     super(scope, id, props);
 
@@ -284,169 +279,13 @@ export class FrontendStack extends cdk.Stack {
       });
     }
 
-    // CloudFront distribution for production-grade global delivery
-    const cloudFrontOriginAccessIdentity = new cloudfront.OriginAccessIdentity(
-      this,
-      'CloudFrontOAI',
-      {
-        comment: 'CI Alert Frontend CloudFront OAI',
-      }
-    );
-
-    // CloudFront WAF Web ACL
-    const cloudfrontWebAcl = new wafv2.CfnWebACL(this, 'CloudFrontWebACL', {
-      scope: 'CLOUDFRONT',
-      defaultAction: { allow: {} },
-      rules: [
-        {
-          name: 'AWSManagedRulesCommonRuleSet',
-          priority: 1,
-          overrideAction: { none: {} },
-          statement: {
-            managedRuleGroupStatement: {
-              vendorName: 'AWS',
-              name: 'AWSManagedRulesCommonRuleSet',
-            },
-          },
-          visibilityConfig: {
-            sampledRequestsEnabled: true,
-            cloudWatchMetricsEnabled: true,
-            metricName: 'CloudFrontCommonRuleSet',
-          },
-        },
-        {
-          name: 'RateLimitRule',
-          priority: 2,
-          action: { block: {} },
-          statement: {
-            rateBasedStatement: {
-              limit: 5000,
-              aggregateKeyType: 'IP',
-            },
-          },
-          visibilityConfig: {
-            sampledRequestsEnabled: true,
-            cloudWatchMetricsEnabled: true,
-            metricName: 'CloudFrontRateLimit',
-          },
-        },
-      ],
-      visibilityConfig: {
-        sampledRequestsEnabled: true,
-        cloudWatchMetricsEnabled: true,
-        metricName: 'CloudFrontWebACL',
-      },
-    });
-
-    // CloudFront distribution
-    const distribution = new cloudfront.Distribution(this, 'Frontend', {
-      defaultBehavior: {
-        origin: new cloudfrontOrigins.HttpOrigin(alb.loadBalancerDnsName, {
-          protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-          customHeaders: {
-            'X-Origin-Verify': 'CloudFront-Distribution',
-          },
-        }),
-        compress: true,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-        cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD_OPTIONS,
-      },
-      // Security and performance settings
-      minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
-      enabled: true,
-      enableIpv6: true,
-      enableLogging: true,
-      logBucket: undefined, // Use default CloudFront logging
-      logFilePrefix: 'cloudfront-logs/',
-      priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // North America, Europe, Asia
-      webAclId: cloudfrontWebAcl.attrArn,
-      // Caching and compression
-      httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
-      // Custom domain if provided
-      domainNames: props?.domainName ? [props.domainName] : undefined,
-      certificate: props?.cloudFrontCertificateArn
-        ? certificatemanager.Certificate.fromCertificateArn(
-            this,
-            'CloudFrontCertificate',
-            props.cloudFrontCertificateArn
-          )
-        : undefined,
-    });
-
-    // Add cache behaviors for different content types
-    distribution.addBehavior('*.js', 
-      new cloudfrontOrigins.HttpOrigin(alb.loadBalancerDnsName, {
-        protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-      }),
-      {
-        compress: true,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-      }
-    );
-
-    distribution.addBehavior('*.css',
-      new cloudfrontOrigins.HttpOrigin(alb.loadBalancerDnsName, {
-        protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-      }),
-      {
-        compress: true,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-      }
-    );
-
-    distribution.addBehavior('/api/*',
-      new cloudfrontOrigins.HttpOrigin(alb.loadBalancerDnsName, {
-        protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-      }),
-      {
-        compress: true,
-        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-      }
-    );
-
-    this.cloudFrontDomainName = distribution.domainName;
-    this.cloudFrontUrl = props?.domainName
-      ? `https://${props.domainName}`
-      : `https://${distribution.domainName}`;
-
-    // Route53 record for CloudFront if domain provided
-    if (props?.domainName && props?.cloudFrontCertificateArn) {
-      const hostedZone = route53.HostedZone.fromLookup(this, 'CloudFrontHostedZone', {
-        domainName: props.domainName.split('.').slice(-2).join('.'),
-      });
-
-      new route53.ARecord(this, 'CloudFrontAliasRecord', {
-        zone: hostedZone,
-        recordName: props.domainName,
-        target: route53.RecordTarget.fromAlias(
-          new route53targets.CloudFrontTarget(distribution)
-        ),
-      });
-    }
+    // ALB is the primary frontend endpoint
 
     // Outputs
     new cdk.CfnOutput(this, 'LoadBalancerURL', {
       value: this.loadBalancerUrl,
       description: 'Application Load Balancer URL',
       exportName: 'CIAlert-LoadBalancerURL',
-    });
-
-    new cdk.CfnOutput(this, 'CloudFrontURL', {
-      value: this.cloudFrontUrl,
-      description: 'CloudFront Distribution URL (Recommended)',
-      exportName: 'CIAlert-CloudFront-URL',
-    });
-
-    new cdk.CfnOutput(this, 'CloudFrontDomain', {
-      value: this.cloudFrontDomainName,
-      description: 'CloudFront Domain Name',
-      exportName: 'CIAlert-CloudFront-Domain',
     });
 
     new cdk.CfnOutput(this, 'LoadBalancerDNS', {
