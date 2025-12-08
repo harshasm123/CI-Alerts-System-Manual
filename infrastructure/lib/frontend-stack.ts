@@ -8,15 +8,14 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as route53targets from 'aws-cdk-lib/aws-route53-targets';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
-import * as cloudfrontOrigins from 'aws-cdk-lib/aws-cloudfront-origins';
+
 import * as path from 'path';
 import { Construct } from 'constructs';
 
 export interface FrontendStackProps extends cdk.StackProps {
   readonly domainName?: string;
   readonly certificateArn?: string;
-  readonly cloudFrontCertificateArn?: string;
+
   readonly apiUrl?: string;
   readonly userPoolId?: string;
   readonly userPoolClientId?: string;
@@ -25,8 +24,7 @@ export interface FrontendStackProps extends cdk.StackProps {
 export class FrontendStack extends cdk.Stack {
   public readonly loadBalancerUrl: string;
   public readonly albDnsName: string;
-  public readonly cloudFrontUrl: string;
-  public readonly cloudFrontDomainName: string;
+
 
   constructor(scope: Construct, id: string, props?: FrontendStackProps) {
     super(scope, id, props);
