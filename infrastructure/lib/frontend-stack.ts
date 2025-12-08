@@ -8,14 +8,15 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as route53targets from 'aws-cdk-lib/aws-route53-targets';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import * as logs from 'aws-cdk-lib/aws-logs';
-
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as cloudfrontOrigins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as path from 'path';
 import { Construct } from 'constructs';
 
 export interface FrontendStackProps extends cdk.StackProps {
   readonly domainName?: string;
   readonly certificateArn?: string;
-
+  readonly cloudFrontCertificateArn?: string;
   readonly apiUrl?: string;
   readonly userPoolId?: string;
   readonly userPoolClientId?: string;
@@ -24,8 +25,8 @@ export interface FrontendStackProps extends cdk.StackProps {
 export class FrontendStack extends cdk.Stack {
   public readonly loadBalancerUrl: string;
   public readonly albDnsName: string;
-
-
+  public readonly cloudFrontUrl: string;
+  public readonly cloudFrontDomainName: string;
   constructor(scope: Construct, id: string, props?: FrontendStackProps) {
     super(scope, id, props);
 
@@ -353,17 +354,18 @@ export class FrontendStack extends cdk.Stack {
         cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD_OPTIONS,
       },
       // Security and performance settings
-      minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
+      minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021_06,
       enabled: true,
       enableIpv6: true,
       enableLogging: true,
       logBucket: undefined, // Use default CloudFront logging
       logFilePrefix: 'cloudfront-logs/',
-
+      enableLogRetention: true,
+      logRetention: logs.RetentionDays.ONE_MONTH,
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // North America, Europe, Asia
       webAclId: cloudfrontWebAcl.attrArn,
       // Caching and compression
-      httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
+      httpVersion: cloudfront.HttpVersion.HTTP2AND3,
       // Custom domain if provided
       domainNames: props?.domainName ? [props.domainName] : undefined,
       certificate: props?.cloudFrontCertificateArn
