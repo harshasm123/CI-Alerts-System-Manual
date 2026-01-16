@@ -80,16 +80,16 @@ echo "  User Pool ID: $USER_POOL_ID"
 echo "  Client ID: $CLIENT_ID"
 
 # Deploy Knowledge Base
+echo ""
+echo "⚠️  Knowledge Base stack requires manual setup in AWS Console"
+echo "   AWS Console → Bedrock → Knowledge bases → Create"
 KB_SUCCESS=false
-if deploy_or_update "CIAlert-KnowledgeBase" "" "S3 + OpenSearch + Bedrock KB"; then
-    KB_SUCCESS=true
-fi
 
 # Deploy Bedrock Agent
+echo ""
+echo "⚠️  Bedrock Agent stack requires manual setup in AWS Console"
+echo "   AWS Console → Bedrock → Agents → Create"
 AGENT_SUCCESS=false
-if deploy_or_update "CIAlert-BedrockAgent" "" "RAG Agent with actions"; then
-    AGENT_SUCCESS=true
-fi
 
 # Deploy Frontend with CloudFront
 CONTEXT_PARAMS="--context apiUrl=\"$API_URL\" --context userPoolId=\"$USER_POOL_ID\" --context userPoolClientId=\"$CLIENT_ID\""
@@ -103,10 +103,9 @@ if deploy_or_update "CIAlert-Frontend" "$CONTEXT_PARAMS" "ALB + ECS + CloudFront
 fi
 
 # Deploy Monitoring
+echo ""
+echo "⚠️  Monitoring stack requires manual setup (stack not yet implemented)"
 MONITORING_SUCCESS=false
-if deploy_or_update "CIAlert-Monitoring" "" "CloudWatch dashboards"; then
-    MONITORING_SUCCESS=true
-fi
 
 # Deploy CI/CD (optional)
 echo ""
@@ -159,12 +158,9 @@ echo "================================"
 echo ""
 
 SUCCESSFUL_STACKS=1  # Core always succeeds or exits
-TOTAL_STACKS=5  # Core, KB, Agent, Frontend, Monitoring
+TOTAL_STACKS=2  # Core, Frontend (KB, Agent, Monitoring manual)
 
-[ "$KB_SUCCESS" = true ] && SUCCESSFUL_STACKS=$((SUCCESSFUL_STACKS + 1))
-[ "$AGENT_SUCCESS" = true ] && SUCCESSFUL_STACKS=$((SUCCESSFUL_STACKS + 1))
 [ "$FRONTEND_SUCCESS" = true ] && SUCCESSFUL_STACKS=$((SUCCESSFUL_STACKS + 1))
-[ "$MONITORING_SUCCESS" = true ] && SUCCESSFUL_STACKS=$((SUCCESSFUL_STACKS + 1))
 
 if [ "$CICD_SUCCESS" = true ]; then
     TOTAL_STACKS=$((TOTAL_STACKS + 1))
@@ -173,21 +169,14 @@ fi
 
 echo "✅ Successfully Deployed/Updated ($SUCCESSFUL_STACKS/$TOTAL_STACKS stacks):"
 echo "  ✓ CIAlertStack (Core Infrastructure)"
-[ "$KB_SUCCESS" = true ] && echo "  ✓ CIAlert-KnowledgeBase (S3 + OpenSearch + Bedrock KB)"
-[ "$AGENT_SUCCESS" = true ] && echo "  ✓ CIAlert-BedrockAgent (RAG Agent)"
 [ "$FRONTEND_SUCCESS" = true ] && echo "  ✓ CIAlert-Frontend (ALB + ECS + CloudFront)"
-[ "$MONITORING_SUCCESS" = true ] && echo "  ✓ CIAlert-Monitoring (CloudWatch Dashboards)"
 [ "$CICD_SUCCESS" = true ] && echo "  ✓ CIAlert-CICD (GitHub Pipeline)"
 
-PARTIAL_COUNT=$((TOTAL_STACKS - SUCCESSFUL_STACKS))
-if [ $PARTIAL_COUNT -gt 0 ]; then
-    echo ""
-    echo "⚠️  Partial Deployments ($PARTIAL_COUNT stacks):"
-    [ "$KB_SUCCESS" = false ] && echo "  ⚠ CIAlert-KnowledgeBase (may require manual setup)"
-    [ "$AGENT_SUCCESS" = false ] && echo "  ⚠ CIAlert-BedrockAgent (may require manual setup)"
-    [ "$FRONTEND_SUCCESS" = false ] && echo "  ⚠ CIAlert-Frontend (check logs for details)"
-    [ "$MONITORING_SUCCESS" = false ] && echo "  ⚠ CIAlert-Monitoring (check logs for details)"
-fi
+echo ""
+echo "⚠️  Manual Setup Required (3 stacks):"
+echo "  ⚠ CIAlert-KnowledgeBase (AWS Console → Bedrock → Knowledge bases)"
+echo "  ⚠ CIAlert-BedrockAgent (AWS Console → Bedrock → Agents)"
+echo "  ⚠ CIAlert-Monitoring (Stack not yet implemented)"
 
 echo ""
 echo "🌐 Production URLs:"
@@ -210,14 +199,14 @@ echo "  ✓ API Gateway with Cognito auth"
 echo "  ✓ Cognito User Pool with MFA"
 echo "  ✓ EventBridge scheduled rules"
 echo "  ✓ SQS queues with DLQ"
-[ "$KB_SUCCESS" = true ] && echo "  ✓ S3 + OpenSearch Serverless + Bedrock KB"
-[ "$AGENT_SUCCESS" = true ] && echo "  ✓ Bedrock Agent with RAG actions"
 [ "$FRONTEND_SUCCESS" = true ] && echo "  ✓ CloudFront CDN with caching"
 [ "$FRONTEND_SUCCESS" = true ] && echo "  ✓ ALB + ECS Fargate auto-scaling"
 [ "$FRONTEND_SUCCESS" = true ] && echo "  ✓ VPC with public/private subnets"
 [ "$FRONTEND_SUCCESS" = true ] && echo "  ✓ WAF with security rules"
-[ "$MONITORING_SUCCESS" = true ] && echo "  ✓ CloudWatch dashboards and alarms"
 [ "$CICD_SUCCESS" = true ] && echo "  ✓ GitHub integration with CodePipeline"
+echo "  ⚠ S3 + OpenSearch + Bedrock KB (manual setup)"
+echo "  ⚠ Bedrock Agent with RAG (manual setup)"
+echo "  ⚠ CloudWatch dashboards (manual setup)"
 
 echo ""
 echo "📝 Next Steps:"
@@ -236,9 +225,16 @@ echo "   bash 'shell scripts/setup-test-user.sh'"
 
 if [ "$KB_SUCCESS" = false ] || [ "$AGENT_SUCCESS" = false ]; then
     echo ""
-    echo "⚠️  Manual Bedrock Setup May Be Required:"
-    echo "   CloudFormation hooks may block automated deployment."
-    echo "   Create manually in AWS Console → Bedrock if needed"
+    echo "📚 Manual Bedrock Setup Instructions:"
+    echo "   1. AWS Console → Bedrock → Model Access → Enable models"
+    echo "   2. AWS Console → Bedrock → Knowledge bases → Create"
+    echo "      - Name: ci-alert-knowledge-base"
+    echo "      - S3 bucket: Use data bucket from core stack"
+    echo "      - Embedding: amazon.titan-embed-text-v1"
+    echo "   3. AWS Console → Bedrock → Agents → Create"
+    echo "      - Name: ci-alert-agent"
+    echo "      - Model: anthropic.claude-3-5-sonnet-20250106-v1:0"
+    echo "      - Connect to knowledge base created above"
 fi
 
 echo ""
