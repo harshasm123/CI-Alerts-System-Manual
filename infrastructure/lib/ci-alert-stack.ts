@@ -291,6 +291,13 @@ export class CIAlertStack extends cdk.Stack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
 
+    // Trigger ingestion endpoint
+    const triggerIngestionResource = api.root.addResource('trigger-ingestion');
+    triggerIngestionResource.addMethod('POST', new apigateway.LambdaIntegration(pubmedFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
     // SQS Event Source for Processor Lambda
     processorFunction.addEventSource(new SqsEventSource(eventQueue, {
       batchSize: 10,

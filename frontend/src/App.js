@@ -209,6 +209,7 @@ function App() {
     e.preventDefault();
     if (!newMolecule.trim()) return;
     setError('');
+    setLoading(true);
     try {
       const token = await getAuthToken();
       const res = await fetch(`${API_URL}watchlist`, {
@@ -228,10 +229,30 @@ function App() {
       }
       setNewMolecule('');
       await loadWatchlist();
+      
+      // Auto-trigger ingestion for new molecule
+      setError('✅ Molecule added! Fetching latest data...');
+      try {
+        await fetch(`${API_URL}trigger-ingestion`, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        setTimeout(() => {
+          loadInsights();
+          setError('✅ Data ingestion complete!');
+          setTimeout(() => setError(''), 3000);
+        }, 5000);
+      } catch (err) {
+        console.error('Auto-ingestion failed:', err);
+      }
     } catch (err) {
       console.error('Add molecule error:', err);
       setError(err.message || 'Failed to add molecule');
     }
+    setLoading(false);
   };
 
   const removeMolecule = async (molecule) => {
@@ -248,6 +269,35 @@ function App() {
     } catch (err) {
       setError('Failed to remove molecule');
     }
+  };
+
+  const triggerIngestion = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}trigger-ingestion`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!res.ok) {
+        throw new Error('Failed to trigger ingestion');
+      }
+      
+      setError('✅ Ingestion triggered! New insights will appear in 1-2 minutes.');
+      setTimeout(() => {
+        loadInsights();
+        setError('');
+      }, 3000);
+    } catch (err) {
+      console.error('Trigger ingestion error:', err);
+      setError('❌ ' + (err.message || 'Failed to trigger ingestion'));
+    }
+    setLoading(false);
   };
 
   if (!user) {
@@ -362,11 +412,16 @@ function App() {
 
         {activeTab === 'insights' && (
           <section className="insights-section">
-            <h2>All Insights</h2>
+            <div className="insights-header">
+              <h2>All Insights</h2>
+              <button onClick={triggerIngestion} className="btn-primary" disabled={loading}>
+                {loading ? '⏳ Ingesting...' : '🔄 Trigger Ingestion'}
+              </button>
+            </div>
             {insights.length === 0 ? (
               <div className="empty-state">
                 <p>No insights available yet.</p>
-                <p>Add molecules to your watchlist to receive AI-powered competitive intelligence alerts.</p>
+                <p>Add molecules to your watchlist and click "Trigger Ingestion" to fetch latest data.</p>
               </div>
             ) : (
               <div className="insights-list">
