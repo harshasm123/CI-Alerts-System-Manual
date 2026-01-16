@@ -1,12 +1,40 @@
 ╔══════════════════════════════════════════════════════════════════════════════════════╗
 ║                    CI ALERT SYSTEM - PRODUCTION ARCHITECTURE                         ║
 ║              Pharmaceutical Competitive Intelligence Platform (AWS)                  ║
+║                        Enhanced with Multi-Agent Architecture                        ║
 ╚══════════════════════════════════════════════════════════════════════════════════════╝
 
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                              EXTERNAL DATA SOURCES                                  │
+│                                 USER PERSONAS                                       │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                            END USERS                                            │ │
+│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌────────────┐ │ │
+│  │  │ CI Analysts     │  │ Strategy Team   │  │ R&D Directors   │  │ Executives │ │ │
+│  │  │                 │  │                 │  │                 │  │            │ │ │
+│  │  │ • Heavy users   │  │ • Medium users  │  │ • Medium users  │  │ • Light    │ │ │
+│  │  │ • 50-75 queries │  │ • 20-30 queries │  │ • 15-25 queries │  │   users    │ │ │
+│  │  │   per day       │  │   per day       │  │   per day       │  │ • 5-10     │ │ │
+│  │  │ • Deep analysis │  │ • Strategic     │  │ • Technical     │  │   queries  │ │ │
+│  │  │ • Watchlists    │  │   insights      │  │   validation    │  │   per day  │ │ │
+│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘  └────────────┘ │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                         TECHNICAL USERS                                         │ │
+│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌────────────┐ │ │
+│  │  │ Gen AI Engineer │  │ Data Scientists │  │ DevOps Engineer │  │ System     │ │ │
+│  │  │                 │  │                 │  │                 │  │ Admin      │ │ │
+│  │  │ • Agent design  │  │ • Model tuning  │  │ • Infrastructure│  │ • User     │ │ │
+│  │  │ • Prompt eng.   │  │ • Data analysis │  │ • Monitoring    │  │   mgmt     │ │ │
+│  │  │ • Workflow opt. │  │ • Performance   │  │ • Deployments   │  │ • Config   │ │ │
+│  │  │ • Agent tuning  │  │   optimization  │  │ • Scaling       │  │ • Security │ │ │
+│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘  └────────────┘ │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────────────┘
-     │                    │                │              │              │
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              EXTERNAL DATA SOURCES                                  │
+└─────────────────────               │                │              │              │
      │                    │                │              │              │
   PubMed            ClinicalTrials      FDA RSS       EMA RSS      WIPO Patents
   (API)             .gov (API)          (Feed)        (Feed)       (PatentScope)
@@ -44,7 +72,7 @@
                                           │
                                           ▼
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                          AI PROCESSING LAYER (Lambda)                               │
+│                    AI PROCESSING LAYER (Multi-Agent Architecture)                   │
 │  ┌───────────────────────────────────────────────────────────────────────────────┐ │
 │  │                        Processor Lambda                                       │ │
 │  │                    (Python 3.12 - ARM64)                                      │ │

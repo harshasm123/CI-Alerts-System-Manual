@@ -88,33 +88,40 @@ npm install
 # Build TypeScript
 npm run build
 
-# Deploy stacks in order
-echo "  📦 Deploying Core Stack..."
-cdk deploy CIAlertStack --require-approval never \
-  --parameters AlertEmail=$ALERT_EMAIL
-
-echo "  📦 Deploying Knowledge Base..."
-cdk deploy CIAlert-KnowledgeBase --require-approval never
-
-echo "  📦 Deploying Bedrock Agent..."
-cdk deploy CIAlert-BedrockAgent --require-approval never
-
-echo "  📦 Deploying Production Monitoring..."
-cdk deploy CIAlert-Production --require-approval never \
-  --parameters AlertEmail=$ALERT_EMAIL
-
-echo "  📦 Deploying Frontend..."
-cdk deploy CIAlert-Frontend --require-approval never
-
-echo "  📦 Deploying Monitoring..."
-cdk deploy CIAlert-Monitoring --require-approval never
-
-# Deploy CICD if GitHub token exists
-if aws secretsmanager describe-secret --secret-id github-token --region $REGION &>/dev/null; then
-    echo "  📦 Deploying CI/CD Pipeline..."
-    cdk deploy CIAlert-CICD --require-approval never
+# Check if core stack exists
+echo "🔍 Checking existing stacks..."
+if aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION &>/dev/null; then
+    echo "✅ CIAlertStack already exists and is healthy"
 else
-    echo "  ⚠️  Skipping CI/CD deployment (no GitHub token)"
+    echo "📦 Deploying Core Stack..."
+    cdk deploy CIAlertStack --require-approval never
+fi
+
+# Get core stack outputs
+API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text 2>/dev/null || echo "")
+USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null || echo "")
+CLIENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text 2>/dev/null || echo "")
+
+echo "📋 Core Stack Outputs:"
+echo "  API URL: $API_URL"
+echo "  User Pool ID: $USER_POOL_ID"
+echo "  Client ID: $CLIENT_ID"
+echo ""
+
+# Deploy Frontend stack
+echo "📦 Deploying CIAlert-Frontend (Production)..."
+if cdk deploy CIAlert-Frontend --require-approval never 2>&1; then
+    echo "✅ CIAlert-Frontend deployed successfully"
+else
+    echo "❌ CIAlert-Frontend failed"
+fi
+
+# Deploy Monitoring stack
+echo "📦 Deploying CIAlert-Monitoring (Production)..."
+if cdk deploy CIAlert-Monitoring --require-approval never 2>&1; then
+    echo "✅ CIAlert-Monitoring deployed successfully"
+else
+    echo "❌ CIAlert-Monitoring failed"
 fi
 
 cd ..
@@ -251,8 +258,8 @@ echo ""
 echo "📊 Key Information:"
 echo "  API URL: $API_URL"
 echo "  User Pool: $USER_POOL_ID"
-if [ -n "$DASHBOARD_URL" ]; then
-    echo "  Dashboard: $DASHBOARD_URL"
+if [ -n "$ALB_URL" ]; then
+    echo "  Frontend: $ALB_URL"
 fi
 echo ""
 echo "📝 Next Steps:"

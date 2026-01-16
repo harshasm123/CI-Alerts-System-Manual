@@ -1,0 +1,13 @@
+# CloudOps Engineer - Professional Skills Summary
+
+## AWS Infrastructure Deployment & Operations
+
+• **Multi-Service Architecture Deployment**: Orchestrated production deployment of 15+ AWS services including ECS Fargate, API Gateway, Lambda, DynamoDB, OpenSearch Serverless, and Bedrock AI using Infrastructure as Code (CDK/CloudFormation) with automated rollback capabilities and blue-green deployment strategies
+
+• **Enterprise-Grade Monitoring & Observability**: Implemented comprehensive CloudWatch monitoring with custom dashboards, automated alerting (SNS/SES), X-Ray distributed tracing, and performance baselines achieving 99.9% uptime SLA with <2 second response times and proactive issue detection
+
+• **Production Security & Compliance**: Deployed multi-layered security architecture with Cognito authentication, WAF protection, VPC isolation, IAM least-privilege policies, encryption at rest/transit, and automated security scanning achieving SOC 2 compliance and GDPR readiness
+
+• **Auto-Scaling & Cost Optimization**: Configured intelligent auto-scaling for ECS (2-10 tasks), Lambda concurrency management, DynamoDB on-demand scaling, and implemented cost optimization strategies (ARM64 instances, S3 lifecycle policies) reducing operational costs by 23% while maintaining performance
+
+• **Disaster Recovery & High Availability**: Architected cross-region backup strategies, automated failover procedures, point-in-time recovery capabilities, and maintained 4-hour RTO/1-hour RPO targets with comprehensive runbook documentation and incident response procedures

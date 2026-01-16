@@ -1,0 +1,165 @@
+CI Alert System - Chunking Strategies
+=====================================
+
+DOCUMENT CHUNKING (Knowledge Base)
+==================================
+
+Fixed-Size Chunking
+-------------------
+Chunk Size: 1000 tokens
+Overlap: 200 tokens
+Use Case: Research papers, FDA documents
+
+Semantic Chunking
+-----------------
+Split by: Paragraphs, sections, abstracts
+Preserve: Complete sentences, citations
+Use Case: PubMed articles, clinical trials
+
+Hierarchical Chunking
+--------------------
+Level 1: Document summary (500 tokens)
+Level 2: Section chunks (1000 tokens)  
+Level 3: Paragraph chunks (300 tokens)
+Use Case: Long regulatory documents
+
+DATA PROCESSING CHUNKING
+========================
+
+SQS Batch Processing
+-------------------
+Batch Size: 10 messages
+Max Wait: 20 seconds
+Lambda Timeout: 15 minutes
+Use Case: PubMed article processing
+
+DynamoDB Batch Operations
+-------------------------
+BatchWriteItem: 25 items max
+BatchGetItem: 100 items max
+Parallel Processing: 5 concurrent batches
+Use Case: Bulk insights storage
+
+S3 Multipart Upload
+------------------
+Part Size: 5MB minimum
+Max Parts: 10,000
+Use Case: Large document uploads
+
+API RESPONSE CHUNKING
+====================
+
+Pagination Strategy
+------------------
+Page Size: 50 insights
+Cursor-based: timestamp + id
+Infinite Scroll: Load next 50 on scroll
+Use Case: Insights dashboard
+
+Streaming Responses
+------------------
+Chunk Size: 1KB
+Server-Sent Events: Real-time updates
+WebSocket: Chat responses
+Use Case: AI agent conversations
+
+MEMORY OPTIMIZATION
+==================
+
+Lambda Memory Chunking
+----------------------
+Small Tasks: 512MB (insights query)
+Medium Tasks: 1024MB (document processing)
+Large Tasks: 3008MB (AI analysis)
+Use Case: Cost optimization
+
+ECS Task Chunking
+-----------------
+CPU: 0.25 vCPU per task
+Memory: 512MB per task
+Auto-scaling: 2-10 tasks
+Use Case: Frontend containers
+
+BEDROCK MODEL CHUNKING
+======================
+
+Input Chunking
+--------------
+Claude Haiku: 200K tokens max
+Claude Sonnet: 200K tokens max
+Split Strategy: Preserve context
+Use Case: Large document analysis
+
+Output Chunking
+---------------
+Summary: 500 tokens max
+Insights: 200 tokens each
+Citations: Include source chunks
+Use Case: Structured AI responses
+
+IMPLEMENTATION EXAMPLES
+=======================
+
+Document Chunking (Python)
+--------------------------
+def chunk_document(text, chunk_size=1000, overlap=200):
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunk = text[start:end]
+        chunks.append(chunk)
+        start = end - overlap
+    return chunks
+
+SQS Batch Processing (Python)
+-----------------------------
+def process_batch(messages):
+    batch_size = 10
+    for i in range(0, len(messages), batch_size):
+        batch = messages[i:i + batch_size]
+        process_documents(batch)
+
+API Pagination (Python)
+-----------------------
+def get_insights(cursor=None, limit=50):
+    query = {
+        'limit': limit,
+        'cursor': cursor
+    }
+    return dynamodb.query(**query)
+
+PERFORMANCE BENEFITS
+===================
+
+Performance: Parallel processing
+Cost: Optimized resource usage  
+Reliability: Fault tolerance
+Scalability: Handle large datasets
+
+CHUNK SIZE RECOMMENDATIONS
+==========================
+
+Text Documents: 1000-1500 tokens
+Code Files: 500-800 tokens
+Research Papers: 1200-2000 tokens
+API Responses: 50-100 items
+Database Queries: 25-100 records
+File Uploads: 5-10MB parts
+
+MONITORING CHUNKING PERFORMANCE
+===============================
+
+Metrics to Track:
+- Chunk processing time
+- Memory usage per chunk
+- Error rates by chunk size
+- Throughput (chunks/second)
+- Cost per chunk processed
+
+Optimization Targets:
+- <2 seconds per chunk
+- <80% memory utilization
+- <1% error rate
+- >100 chunks/minute
+- <$0.01 per chunk

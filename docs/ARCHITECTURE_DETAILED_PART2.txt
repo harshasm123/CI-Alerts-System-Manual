@@ -1,0 +1,228 @@
+                                          │
+                                          ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                      STORAGE LAYER (Multi-Store Architecture)                       │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                           STORAGE SPECIFICATIONS                                 │ │
+│  │  • DynamoDB: Serverless NoSQL, auto-scaling, 99.999% availability               │ │
+│  │  • S3: Object storage, 99.999999999% durability, lifecycle policies            │ │
+│  │  • OpenSearch: Serverless vector search, 2-4 OCUs auto-scaling                 │ │
+│  │  • Encryption: AES-256 at rest, TLS 1.2+ in transit                            │ │
+│  │  • Backup: Point-in-time recovery (DynamoDB), versioning (S3)                  │ │
+│  │  • Replication: Multi-AZ (DynamoDB), Cross-region available (S3)               │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐     │
+│  │   InsightsTable      │  │   WatchlistTable     │  │  UserSettingsTable   │     │
+│  │   (DynamoDB)         │  │   (DynamoDB)         │  │   (DynamoDB)         │     │
+│  │                      │  │                      │  │                      │     │
+│  │  PK: molecule        │  │  PK: userId          │  │  PK: userId          │     │
+│  │  SK: timestamp       │  │  SK: molecule        │  │  • email             │     │
+│  │  • insights          │  │  • created_at        │  │  • digestEnabled     │     │
+│  │  • source            │  │  • aliases           │  │  • preferences       │     │
+│  │  • sentiment         │  │  • notification_pref │  │  • agent_preferences │     │
+│  │  • raw_content       │  │                      │  │  • workflow_templates│     │
+│  │  • embedding_id      │  │  Capacity:           │  │                      │     │
+│  │  • agent_analysis    │  │  • Mode: On-Demand   │  │  Capacity:           │     │
+│  │                      │  │  • RCU: 5-25 auto   │  │  • Mode: On-Demand   │     │
+│  │  Capacity:           │  │  • WCU: 5-25 auto   │  │  • RCU: 1-5 auto     │     │
+│  │  • Mode: On-Demand   │  │  • Storage: <1GB     │  │  • WCU: 1-5 auto     │     │
+│  │  • RCU: 25-100 auto │  │                      │  │  • Storage: <100MB    │     │
+│  │  • WCU: 25-50 auto  │  │                      │  │                      │     │
+│  │  • Storage: 50GB+   │  │                      │  │                      │     │
+│  └──────────────────────┘  └──────────────────────┘  └──────────────────────┘     │
+│  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐     │
+│  │   S3 Data Bucket     │  │  OpenSearch Vector   │  │  Knowledge Base      │     │
+│  │   (Object Storage)   │  │  (Serverless)        │  │  (S3 + Bedrock)      │     │
+│  │                      │  │                      │  │                      │     │
+│  │  • Raw Data:         │  │  • OCUs: 2-4 auto    │  │  • Documents: 50GB+  │     │
+│  │    /raw/pubmed/      │  │  • Dimensions: 1536   │  │  • Embeddings: Titan │     │
+│  │    /raw/trials/      │  │  • Index Size: 10GB+  │  │  • Sync: Manual      │     │
+│  │    /raw/fda/         │  │  • Query Latency:     │  │  • Search: Hybrid    │     │
+│  │  • Knowledge Base:   │  │    p50: 50ms         │  │  • Citations: Auto   │     │
+│  │    /kb/insights/     │  │    p95: 200ms        │  │  • Retrieval: Top-10 │     │
+│  │  • Lifecycle:       │  │  • Throughput:        │  │  • Relevance: 0.7+   │     │
+│  │    90d → Glacier    │  │    1000 queries/min   │  │                      │     │
+│  │  • Versioning: On   │  │                      │  │                      │     │
+│  └──────────────────────┘  └──────────────────────┘  └──────────────────────┘     │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+                                          │
+                                          │
+        ┌─────────────────────────────────┼─────────────────────────────────┐
+        │                                 │                                 │
+        ▼                                 ▼                                 ▼
+┌───────────────────┐         ┌───────────────────────┐         ┌───────────────────┐
+│  NOTIFICATION     │         │    API LAYER          │         │   FRONTEND        │
+│     LAYER         │         │  (API Gateway)        │         │  (PRODUCTION)     │
+└───────────────────┘         └───────────────────────┘         └───────────────────┘
+        │                                 │                                 │
+        │                                 │                                 │
+        ▼                                 ▼                                 ▼
+┌───────────────────┐         ┌───────────────────────┐         ┌───────────────────┐
+│  EventBridge      │         │  Cognito Authorizer   │         │  Cloudflare CDN   │
+│  (9 AM UTC)       │         │  (JWT + RBAC)         │         │  Global Network   │
+│                   │         │                       │         │                   │
+│  Multi-Agent      │         │  Enhanced Endpoints:  │         │  • 330+ PoPs      │
+│  Digest Gen.      │         │  • GET /insights      │         │  • DDoS Protection│
+└────────┬──────────┘         │  • GET /watchlist     │         │  • WAF Rules      │
+         │                    │  • POST /watchlist    │         │  • Bot Management │
+         ▼                    │  • POST /agentcore    │         │  • SSL/TLS 1.3    │
+┌───────────────────┐         │  • GET /agents        │         │  • HTTP/3 Support │
+│  Enhanced Digest  │         │  • POST /workflow     │         │  • Edge Caching   │
+│  Lambda           │         │  • GET /workflows     │         │        │          │
+│                   │         │  • POST /agent/query  │         │        ▼          │
+│  • Multi-agent    │         │  • GET /analytics     │         ┌───────────────────┐
+│    coordination   │         └───────────┬───────────┘         │ Application Load  │
+│  • Personalized   │                     │                     │ Balancer (ALB)    │
+│    summaries      │                     ▼                     │                   │
+│  • Rich templates │         ┌───────────────────────┐         │ • Health Checks   │
+│  • Multi-format   │         │   Enhanced Lambda     │         │ • Auto Scaling    │
+│    delivery       │         │     Functions         │         │ • Target Groups   │
+└───────────────────┘         │                       │         │ • SSL Termination │
+                              │  ┌─────────────────┐  │         │ • Sticky Sessions │
+                              │  │ Compute Specs:  │  │         └─────────┬─────────┘
+                              │  │ • ARM64 Graviton│  │                   │
+                              │  │ • Python 3.12   │  │                   ▼
+                              │  │ • 512MB Memory  │  │         ┌───────────────────┐
+                              │  │ • 30s Timeout  │  │         │   ECS Fargate     │
+                              │  │ • 25 Concurrent │  │         │   Cluster         │
+                              │  │ • VPC Enabled  │  │         │                   │
+                              │  └─────────────────┘  │         │ Container Specs:  │
+                              │                       │         │ • CPU: 0.5 vCPU   │
+                              │  • AgentCore API      │         │ • Memory: 1GB     │
+                              │  • Workflow Engine    │         │ • Tasks: 2-10     │
+                              │  • Agent Management   │         │ • Auto Scaling    │
+                              │  • Analytics API      │         │ • Health Checks   │
+                              │  • Performance Mon.   │         │ • Rolling Updates │
+                              └───────────────────────┘         │ • Private Subnets │
+                                                                │ • Container Port: │
+                                                                │   8080 (non-root)│
+                                                                │                   │
+                                                                │ Enhanced Features:│
+                                                                │ • Agent Dashboard │
+                                                                │ • Workflow Builder│
+                                                                │ • Multi-Agent Chat│
+                                                                │ • Agent Analytics │
+                                                                │ • Custom Workflows│
+                                                                │ • Real-time Mon.  │
+                                                                └───────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                           NETWORK & INFRASTRUCTURE                                   │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                              VPC CONFIGURATION                                   │ │
+│  │  • CIDR: 10.0.0.0/16 (65,536 IP addresses)                                      │ │
+│  │  • Availability Zones: us-west-2a, us-west-2b (Multi-AZ deployment)            │ │
+│  │  • Public Subnets: 10.0.1.0/24, 10.0.2.0/24 (ALB, NAT Gateway)                │ │
+│  │  • Private Subnets: 10.0.11.0/24, 10.0.12.0/24 (ECS, Lambda)                  │ │
+│  │  • Internet Gateway: Provides internet access to public subnets                │ │
+│  │  • NAT Gateway: 2x (Multi-AZ) for private subnet internet access               │ │
+│  │  • Route Tables: Public (0.0.0.0/0 → IGW), Private (0.0.0.0/0 → NAT)          │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                            SECURITY GROUPS                                       │ │
+│  │  • ALB Security Group:                                                           │ │
+│  │    - Inbound: 80 (HTTP), 443 (HTTPS) from 0.0.0.0/0                           │ │
+│  │    - Outbound: 8080 to ECS Security Group                                       │ │
+│  │  • ECS Security Group:                                                          │ │
+│  │    - Inbound: 8080 from ALB Security Group                                      │ │
+│  │    - Outbound: 443 (HTTPS) to 0.0.0.0/0 (API calls)                           │ │
+│  │  • Lambda Security Group (VPC):                                                 │ │
+│  │    - Outbound: 443 (HTTPS) to 0.0.0.0/0 (Bedrock, APIs)                       │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                         CLOUDFLARE CONFIGURATION                                 │ │
+│  │  • Global Network: 330+ Points of Presence worldwide                            │ │
+│  │  • DDoS Protection: Automatic mitigation up to 100+ Gbps attacks               │ │
+│  │  • WAF Rules: OWASP Top 10, custom pharmaceutical industry rules               │ │
+│  │  • Bot Management: ML-powered bot detection and mitigation                      │ │
+│  │  • SSL/TLS: Universal SSL, TLS 1.3, HSTS, Certificate Transparency            │ │
+│  │  • HTTP/3: QUIC protocol support for faster connections                         │ │
+│  │  • Edge Caching: Static assets cached at edge (JS, CSS, images)               │ │
+│  │  • Compression: Brotli + Gzip for 85% size reduction                           │ │
+│  │  • Analytics: Real-time traffic, security, and performance metrics             │ │
+│  │  • Rate Limiting: 1000 requests/minute per IP, burst protection                │ │
+│  │  • Geo-blocking: Optional country-level access control                         │ │
+│  │  • Always Online: Serves cached version if origin is down                      │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════════════╗
+║                              PERFORMANCE SPECIFICATIONS                               ║
+╠══════════════════════════════════════════════════════════════════════════════════════╣
+║  API Response Times (p50/p95/p99):                                                   ║
+║  • Insights API: 150ms / 400ms / 800ms                                              ║
+║  • Watchlist API: 100ms / 250ms / 500ms                                             ║
+║  • Agent Chat: 2.5s / 4s / 6s                                                       ║
+║  • Dashboard Load: 1.5s / 3s / 5s                                                   ║
+║                                                                                      ║
+║  Throughput Specifications:                                                          ║
+║  • Document Processing: 100-150 docs/hour per Lambda                                ║
+║  • API Requests: 2,000/second sustained, 5,000/second burst                        ║
+║  • Concurrent Users: 25 (current), 100+ (with scaling)                             ║
+║  • Database Operations: 25-100 RCU/WCU auto-scaling                                 ║
+║                                                                                      ║
+║  Availability & Reliability:                                                         ║
+║  • System Uptime: 99.9% (target 99.99% with enhancements)                          ║
+║  • Data Durability: 99.999999999% (S3), 99.999% (DynamoDB)                        ║
+║  • Recovery Time Objective (RTO): 1 hour                                            ║
+║  • Recovery Point Objective (RPO): 5 minutes                                        ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════════════╗
+║                                COST BREAKDOWN                                         ║
+╠══════════════════════════════════════════════════════════════════════════════════════╣
+║  Monthly Costs (Medium Configuration - 10-25 users):                                ║
+║                                                                                      ║
+║  Compute Services:                                                                   ║
+║  • Lambda Functions: $5 (all functions combined)                                    ║
+║  • ECS Fargate: $12 (2-6 tasks, 0.5 vCPU, 1GB memory)                             ║
+║                                                                                      ║
+║  Storage Services:                                                                   ║
+║  • DynamoDB: $15 (on-demand, 50GB+ data)                                           ║
+║  • S3: $10 (50GB raw data + knowledge base)                                        ║
+║  • OpenSearch Serverless: $110 (4 OCUs auto-scaling)                               ║
+║                                                                                      ║
+║  AI/ML Services:                                                                     ║
+║  • Claude 3.5 Haiku: $1 (batch processing)                                         ║
+║  • Claude 3.5 Sonnet: $44 (interactive analysis)                                   ║
+║  • Titan Embeddings: $15 (vector generation)                                       ║
+║                                                                                      ║
+║  Network & Security:                                                                 ║
+║  • Application Load Balancer: $22                                                   ║
+║  • NAT Gateway: $45 (2x Multi-AZ)                                                   ║
+║  • Cloudflare Pro: $20 (enhanced security & performance)                           ║
+║  • Data Transfer: $5                                                                ║
+║                                                                                      ║
+║  Monitoring & Operations:                                                            ║
+║  • CloudWatch: $10 (logs, metrics, alarms)                                         ║
+║  • SES: $2 (email notifications)                                                    ║
+║  • Cognito: Free (< 50K MAU)                                                       ║
+║                                                                                      ║
+║  TOTAL: $316/month = $3,792/year                                                    ║
+║  ROI: 32,900% ($1.25M value vs $3.8K cost)                                         ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════════════╗
+║                           DEPLOYMENT SPECIFICATIONS                                   ║
+╠══════════════════════════════════════════════════════════════════════════════════════╣
+║  Region: us-west-2 (Oregon)                                                         ║
+║  Account ID: 573054851765                                                           ║
+║  Environment: Production                                                             ║
+║                                                                                      ║
+║  Infrastructure as Code:                                                             ║
+║  • CDK Version: 2.x (TypeScript)                                                    ║
+║  • Stacks: 7 (Core, Frontend, Knowledge Base, Agent, Monitoring, CICD, Production) ║
+║  • Deployment Time: 15 minutes (updates), 4-6 hours (initial)                      ║
+║                                                                                      ║
+║  Security & Compliance:                                                              ║
+║  • Encryption: AES-256 at rest, TLS 1.3 in transit                                 ║
+║  • Authentication: Cognito JWT + MFA                                                ║
+║  • Authorization: Role-based access control (RBAC)                                  ║
+║  • Compliance: HIPAA-eligible, SOC 2 ready                                         ║
+║                                                                                      ║
+║  Monitoring & Alerting:                                                             ║
+║  • CloudWatch Dashboards: 3 (System, AI/ML, Business)                             ║
+║  • CloudWatch Alarms: 15 (critical and warning)                                    ║
+║  • SNS Notifications: Email + Slack integration                                     ║
+║  • Log Retention: 30 days (Lambda), 14 days (API Gateway)                          ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝

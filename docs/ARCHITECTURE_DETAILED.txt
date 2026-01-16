@@ -1,0 +1,175 @@
+╔══════════════════════════════════════════════════════════════════════════════════════╗
+║                    CI ALERT SYSTEM - DETAILED PRODUCTION ARCHITECTURE                ║
+║              Pharmaceutical Competitive Intelligence Platform (AWS + Cloudflare)     ║
+║                        Enhanced with Multi-Agent Architecture                        ║
+╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                                 USER PERSONAS                                       │
+├─────────────────────────────────────────────────────────────────────────────────────┤
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                            END USERS                                            │ │
+│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌────────────┐ │ │
+│  │  │ CI Analysts     │  │ Strategy Team   │  │ R&D Directors   │  │ Executives │ │ │
+│  │  │                 │  │                 │  │                 │  │            │ │ │
+│  │  │ • Heavy users   │  │ • Medium users  │  │ • Medium users  │  │ • Light    │ │ │
+│  │  │ • 50-75 queries │  │ • 20-30 queries │  │ • 15-25 queries │  │   users    │ │ │
+│  │  │   per day       │  │   per day       │  │   per day       │  │ • 5-10     │ │ │
+│  │  │ • Deep analysis │  │ • Strategic     │  │ • Technical     │  │   queries  │ │ │
+│  │  │ • Watchlists    │  │   insights      │  │   validation    │  │   per day  │ │ │
+│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘  └────────────┘ │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                         TECHNICAL USERS                                         │ │
+│  │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌────────────┐ │ │
+│  │  │ Gen AI Engineer │  │ Data Scientists │  │ DevOps Engineer │  │ System     │ │ │
+│  │  │                 │  │                 │  │                 │  │ Admin      │ │ │
+│  │  │ • Agent design  │  │ • Model tuning  │  │ • Infrastructure│  │ • User     │ │ │
+│  │  │ • Prompt eng.   │  │ • Data analysis │  │ • Monitoring    │  │   mgmt     │ │ │
+│  │  │ • Workflow opt. │  │ • Performance   │  │ • Deployments   │  │ • Config   │ │ │
+│  │  │ • Agent tuning  │  │   optimization  │  │ • Scaling       │  │ • Security │ │ │
+│  │  └─────────────────┘  └─────────────────┘  └─────────────────┘  └────────────┘ │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              EXTERNAL DATA SOURCES                                  │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+     │                    │                │              │              │
+     │                    │                │              │              │
+  PubMed            ClinicalTrials      FDA RSS       EMA RSS      WIPO Patents
+  (API)             .gov (API)          (Feed)        (Feed)       (PatentScope)
+     │                    │                │              │              │
+     └────────────────────┴────────────────┴──────────────┴──────────────┘
+                                          │
+                                          ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                      INGESTION LAYER (Serverless Lambda Functions)                  │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                           COMPUTE SPECIFICATIONS                                 │ │
+│  │  • Architecture: ARM64 (AWS Graviton2 processors)                               │ │
+│  │  • Runtime: Python 3.12 (optimized for ARM64)                                  │ │
+│  │  • Memory: 512 MB per function                                                  │ │
+│  │  • CPU: 0.33 vCPU allocated (proportional to memory)                           │ │
+│  │  • Timeout: 60 seconds                                                          │ │
+│  │  • Concurrent Executions: 10 (reserved)                                        │ │
+│  │  • Cold Start: ~400ms (ARM64 optimized)                                        │ │
+│  │  • Network: VPC-enabled with NAT Gateway for external API calls               │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│  │   PubMed     │  │  Clinical    │  │  FDA/EMA     │  │    WIPO      │           │
+│  │  Ingestion   │  │   Trials     │  │  Ingestion   │  │  Ingestion   │           │
+│  │   Lambda     │  │   Lambda     │  │   Lambda     │  │   Lambda     │           │
+│  │              │  │              │  │              │  │              │           │
+│  │ • 35M+ docs  │  │ • 400K trials│  │ • Regulatory │  │ • Patent DB  │           │
+│  │ • REST API   │  │ • JSON API   │  │ • RSS feeds  │  │ • SOAP API   │           │
+│  │ • Rate limit │  │ • Pagination │  │ • XML parse  │  │ • Complex    │           │
+│  │   3 req/sec  │  │   50/min     │  │ • Transform  │  │   queries    │           │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘           │
+│         │                 │                 │                 │                     │
+│         └─────────────────┴─────────────────┴─────────────────┘                     │
+│                                     │                                               │
+│                    ┌────────────────┴────────────────┐                              │
+│                    │   EventBridge Scheduler         │                              │
+│                    │   (Cron: 0 0 * * ? *)          │                              │
+│                    │   Staggered: 17:30,17:35,17:40 │                              │
+│                    │   Timezone: UTC (11PM IST)      │                              │
+│                    └─────────────────────────────────┘                              │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+                                          │
+                                          ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                        MESSAGE QUEUE (Amazon SQS - Serverless)                     │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                           QUEUE SPECIFICATIONS                                   │ │
+│  │  • Type: Standard SQS (high throughput, at-least-once delivery)                 │ │
+│  │  • Message Retention: 14 days                                                   │ │
+│  │  • Visibility Timeout: 120 seconds (matches Lambda timeout)                    │ │
+│  │  • Batch Size: 10 messages per Lambda invocation                               │ │
+│  │  • Max Receive Count: 3 (before DLQ)                                           │ │
+│  │  • Encryption: AES-256 (SQS managed keys)                                      │ │
+│  │  • Throughput: 3,000 messages/second (standard queue)                          │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                         Processing Queue                                      │ │
+│  │                    (Decouples Ingestion/Processing)                           │ │
+│  │  • Daily Volume: ~1,500 messages (1,000 docs + metadata)                     │ │
+│  │  • Peak Rate: 50 messages/minute during ingestion                             │ │
+│  │  • Message Size: 1-10 KB (document metadata + content)                        │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                      Dead Letter Queue (DLQ)                                  │ │
+│  │  • Failed Message Storage: 14 days retention                                  │ │
+│  │  • CloudWatch Alarms: >10 messages triggers alert                             │ │
+│  │  • Manual Reprocessing: Via AWS Console or CLI                                │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+                                          │
+                                          ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                    AI PROCESSING LAYER (Multi-Agent Architecture)                   │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                           COMPUTE SPECIFICATIONS                                 │ │
+│  │  • Architecture: ARM64 (AWS Graviton2 - 20% better price-performance)          │ │
+│  │  • Runtime: Python 3.12 (ARM64 optimized, 15% faster string operations)       │ │
+│  │  • Memory: 1024 MB (processor), 512 MB (API functions)                         │ │
+│  │  • CPU: 0.67 vCPU (processor), 0.33 vCPU (API functions)                       │ │
+│  │  • Timeout: 120 seconds (processor), 30 seconds (API)                          │ │
+│  │  • Concurrent Executions: 25 (reserved for processing)                         │ │
+│  │  • Provisioned Concurrency: 5 (for critical API functions)                    │ │
+│  │  • Cold Start Optimization: Container reuse, connection pooling                │ │
+│  │  • Network: VPC with private subnets, NAT Gateway for Bedrock access          │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                        Processor Lambda                                       │ │
+│  │                    (Python 3.12 - ARM64)                                      │ │
+│  │                                                                               │ │
+│  │  • Text normalization & entity extraction                                    │ │
+│  │  • Relevance scoring & impact analysis                                       │ │
+│  │  • AI-powered summarization                                                  │ │
+│  │  • Batch Processing: 10 documents per invocation                             │ │
+│  │  • Throughput: 100-150 documents/hour per function                           │ │
+│  │  • Memory Usage: ~400MB peak (JSON parsing + AI calls)                       │ │
+│  └───────────────────────────────┬───────────────────────────────────────────────┘ │
+│                                  │                                                 │
+│                                  ▼                                                 │
+│  ┌───────────────────────────────────────────────────────────────────────────────┐ │
+│  │                      AWS Bedrock (Managed AI Service)                         │ │
+│  │  ┌─────────────────────────────────────────────────────────────────────────┐ │ │
+│  │  │                        INFRASTRUCTURE SPECS                              │ │ │
+│  │  │  • Compute: Managed by AWS (no GPU/CPU configuration needed)             │ │ │
+│  │  │  • Scaling: Auto-scales based on request volume                          │ │ │
+│  │  │  • Availability: 99.9% SLA across multiple AZs                           │ │ │
+│  │  │  • Latency: p50: 800ms, p95: 2.5s, p99: 5s                              │ │ │
+│  │  │  • Rate Limits: 1000 requests/minute per model                           │ │ │
+│  │  │  • Regions: us-west-2 (Oregon) - lowest latency for our deployment      │ │ │
+│  │  └─────────────────────────────────────────────────────────────────────────┘ │ │
+│  │  ┌─────────────────────────────────────────────────────────────────────────┐ │ │
+│  │  │  Claude 3.5 Haiku (Batch Processing)                                   │ │ │
+│  │  │  • Model ID: anthropic.claude-3-5-haiku-20241022                       │ │ │
+│  │  │  • Context Window: 200K tokens                                          │ │ │
+│  │  │  • Cost: $0.25 input / $1.25 output per 1M tokens                     │ │ │
+│  │  │  • Performance: 15K tokens/second output                               │ │ │
+│  │  │  • Use Case: Sentiment analysis, summarization, entity extraction     │ │ │
+│  │  │  • Monthly Usage: ~2M tokens ($0.50/month)                             │ │ │
+│  │  └─────────────────────────────────────────────────────────────────────────┘ │ │
+│  │  ┌─────────────────────────────────────────────────────────────────────────┐ │ │
+│  │  │  Claude 3.5 Sonnet v2 (Interactive Analysis)                           │ │ │
+│  │  │  • Model ID: anthropic.claude-3-5-sonnet-20241022-v2:0                 │ │ │
+│  │  │  • Context Window: 200K tokens                                          │ │ │
+│  │  │  • Cost: $3 input / $15 output per 1M tokens                           │ │ │
+│  │  │  • Performance: 8K tokens/second output                                │ │ │
+│  │  │  • Use Case: Complex analysis, strategic insights, RAG queries         │ │ │
+│  │  │  • Monthly Usage: ~15M tokens ($44/month)                              │ │ │
+│  │  └─────────────────────────────────────────────────────────────────────────┘ │ │
+│  │  ┌─────────────────────────────────────────────────────────────────────────┐ │ │
+│  │  │  Titan Embeddings (Vector Generation)                                   │ │ │
+│  │  │  • Model ID: amazon.titan-embed-text-v1                                │ │ │
+│  │  │  • Vector Dimensions: 1536                                              │ │ │
+│  │  │  • Cost: $0.10 per 1M tokens                                           │ │ │
+│  │  │  • Performance: 25K tokens/second                                      │ │ │
+│  │  │  • Use Case: Document embeddings, semantic search, RAG indexing       │ │ │
+│  │  │  • Monthly Usage: ~150K tokens ($15/month)                             │ │ │
+│  │  └─────────────────────────────────────────────────────────────────────────┘ │ │
+│  └───────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────┘

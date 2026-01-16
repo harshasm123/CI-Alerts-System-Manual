@@ -1,220 +1,262 @@
 #!/bin/bash
 
-# Production-Grade Deployment Script for CI Alert System
-# Deploys with ALB, auto-scaling, WAF, and production optimizations
-
+# Production Deployment Script - All Stacks with CloudFront
 set -e
 
 echo "🚀 Starting Production-Grade CI Alert System Deployment"
+echo "======================================================"
 
 # Configuration
-REGION=$(aws configure get region || echo "us-east-2")
-export AWS_DEFAULT_REGION=$REGION
-aws configure set region $REGION
-
+REGION=$(aws configure get region || echo "us-west-2")
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ENVIRONMENT=${1:-production}
+ALERT_EMAIL=${2:-admin@yourcompany.com}
 
 echo "📋 Production Configuration:"
 echo "  Region: $REGION"
 echo "  Account ID: $ACCOUNT_ID"
-echo "  Environment: Production"
+echo "  Environment: $ENVIRONMENT"
+echo "  Alert Email: $ALERT_EMAIL"
 
-# Optional: Domain and certificate configuration
-read -p "Do you have a custom domain? (y/n): " has_domain
-if [[ "$has_domain" =~ ^[Yy]$ ]]; then
-    read -p "Enter domain name (e.g., ci-alert.yourcompany.com): " DOMAIN_NAME
-    read -p "Enter ACM certificate ARN (optional): " CERT_ARN
+# Ask about custom domain
+read -p "Do you have a custom domain? (y/n): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    read -p "Enter your domain name: " DOMAIN_NAME
+    read -p "Enter your certificate ARN: " CERT_ARN
+else
+    DOMAIN_NAME=""
+    CERT_ARN=""
 fi
 
-# Check prerequisites
 echo "🔍 Checking prerequisites..."
 
-if ! command -v cdk &> /dev/null; then
-    echo "📦 Installing AWS CDK..."
-    npm install -g aws-cdk
-fi
-
-if ! command -v docker &> /dev/null; then
-    echo "❌ Docker not found. Please install Docker for container builds."
-    exit 1
-fi
-
-# Fix Docker permissions if needed
-if ! docker ps &> /dev/null; then
-    echo "🔧 Fixing Docker permissions..."
-    sudo usermod -aG docker $USER
-    sudo systemctl start docker
-    sudo chmod 666 /var/run/docker.sock
-    echo "⚠️  Docker permissions fixed. You may need to logout/login or run 'newgrp docker'"
-fi
-
-# Bootstrap if needed
-if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region $REGION >/dev/null 2>&1; then
-    echo "🏗️ Bootstrapping CDK..."
-    cdk bootstrap aws://$ACCOUNT_ID/$REGION
-fi
-
+# Install dependencies and build
 cd infrastructure
 npm install
 npm run build
 
-# Deploy stacks with production configuration
-DEPLOYED_STACKS=()
-FAILED_STACKS=()
+# Deploy all stacks in order
+echo ""
+echo "📦 Deploying Core Infrastructure..."
+if cdk deploy CIAlertStack --require-approval never --parameters AlertEmail=$ALERT_EMAIL; then
+    echo "✅ CIAlertStack deployed successfully"
+else
+    echo "❌ CIAlertStack failed"
+    exit 1
+fi
 
-deploy_stack() {
-    local stack_name=$1
-    local context_args=$2
-    
-    # Check if stack already exists
-    if aws cloudformation describe-stacks --stack-name $stack_name --region $REGION &>/dev/null; then
-        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $stack_name --region $REGION --query 'Stacks[0].StackStatus' --output text)
-        if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" ]]; then
-            echo "✅ $stack_name already exists and is healthy ($STACK_STATUS)"
-            DEPLOYED_STACKS+=("$stack_name")
-            return 0
-        fi
-    fi
-    
-    echo ""
-    echo "📦 Deploying $stack_name (Production)..."
-    
-    if cdk deploy $stack_name --require-approval never $context_args; then
-        DEPLOYED_STACKS+=("$stack_name")
-        echo "✅ $stack_name deployed successfully"
+# Get core stack outputs
+API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text 2>/dev/null || echo "")
+USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null || echo "")
+CLIENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text 2>/dev/null || echo "")
+DATA_BUCKET=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`DataBucket`].OutputValue' --output text 2>/dev/null || echo "")
+
+echo ""
+echo "📋 Core Stack Outputs:"
+echo "  API URL: $API_URL"
+echo "  User Pool ID: $USER_POOL_ID"
+echo "  Client ID: $CLIENT_ID"
+echo "  Data Bucket: $DATA_BUCKET"
+
+# Deploy Knowledge Base
+echo ""
+echo "📦 Deploying Knowledge Base..."
+if cdk deploy CIAlert-KnowledgeBase --require-approval never --context dataBucket="$DATA_BUCKET"; then
+    echo "✅ CIAlert-KnowledgeBase deployed successfully"
+    KB_SUCCESS=true
+else
+    echo "❌ CIAlert-KnowledgeBase failed"
+    KB_SUCCESS=false
+fi
+
+# Deploy Bedrock Agent
+echo ""
+echo "📦 Deploying Bedrock Agent..."
+if cdk deploy CIAlert-BedrockAgent --require-approval never; then
+    echo "✅ CIAlert-BedrockAgent deployed successfully"
+    AGENT_SUCCESS=true
+else
+    echo "❌ CIAlert-BedrockAgent failed"
+    AGENT_SUCCESS=false
+fi
+
+# Deploy Production Stack
+echo ""
+echo "📦 Deploying Production Stack..."
+if cdk deploy CIAlert-Production --require-approval never --parameters AlertEmail=$ALERT_EMAIL; then
+    echo "✅ CIAlert-Production deployed successfully"
+    PROD_SUCCESS=true
+else
+    echo "❌ CIAlert-Production failed"
+    PROD_SUCCESS=false
+fi
+
+# Deploy Frontend with CloudFront
+echo ""
+echo "📦 Deploying Frontend with CloudFront..."
+CONTEXT_PARAMS="--context apiUrl=\"$API_URL\" --context userPoolId=\"$USER_POOL_ID\" --context userPoolClientId=\"$CLIENT_ID\""
+if [ -n "$DOMAIN_NAME" ] && [ -n "$CERT_ARN" ]; then
+    CONTEXT_PARAMS="$CONTEXT_PARAMS --context domainName=\"$DOMAIN_NAME\" --context certificateArn=\"$CERT_ARN\""
+fi
+
+if eval "cdk deploy CIAlert-Frontend --require-approval never $CONTEXT_PARAMS"; then
+    echo "✅ CIAlert-Frontend deployed successfully"
+    FRONTEND_SUCCESS=true
+else
+    echo "❌ CIAlert-Frontend failed"
+    FRONTEND_SUCCESS=false
+fi
+
+# Deploy Monitoring
+echo ""
+echo "📦 Deploying Monitoring..."
+if cdk deploy CIAlert-Monitoring --require-approval never; then
+    echo "✅ CIAlert-Monitoring deployed successfully"
+    MONITORING_SUCCESS=true
+else
+    echo "❌ CIAlert-Monitoring failed"
+    MONITORING_SUCCESS=false
+fi
+
+# Deploy CI/CD (optional)
+echo ""
+read -p "Deploy CI/CD pipeline? (y/n): " -n 1 -r
+echo
+CICD_SUCCESS=false
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "📦 Deploying CI/CD Pipeline..."
+    if cdk deploy CIAlert-CICD --require-approval never; then
+        echo "✅ CIAlert-CICD deployed successfully"
+        CICD_SUCCESS=true
     else
-        FAILED_STACKS+=("$stack_name")
-        echo "❌ $stack_name failed"
+        echo "❌ CIAlert-CICD failed"
     fi
-}
-
-# Core stack
-deploy_stack "CIAlertStack"
-
-# Get outputs from core stack
-if [[ " ${DEPLOYED_STACKS[@]} " =~ " CIAlertStack " ]]; then
-    API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text 2>/dev/null || echo "")
-    USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null || echo "")
-    USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text 2>/dev/null || echo "")
-    
-    echo ""
-    echo "📋 Core Stack Outputs:"
-    echo "  API URL: $API_URL"
-    echo "  User Pool ID: $USER_POOL_ID"
-    echo "  Client ID: $USER_POOL_CLIENT_ID"
+else
+    echo "⏭️ Skipping CI/CD deployment"
 fi
-
-# Frontend with production configuration
-FRONTEND_CONTEXT=""
-if [ -n "$API_URL" ]; then
-    FRONTEND_CONTEXT="--context apiUrl=$API_URL --context userPoolId=$USER_POOL_ID --context userPoolClientId=$USER_POOL_CLIENT_ID --context region=$REGION"
-fi
-
-if [ -n "$DOMAIN_NAME" ]; then
-    FRONTEND_CONTEXT="$FRONTEND_CONTEXT --context domainName=$DOMAIN_NAME"
-fi
-
-if [ -n "$CERT_ARN" ]; then
-    FRONTEND_CONTEXT="$FRONTEND_CONTEXT --context certificateArn=$CERT_ARN"
-fi
-
-if [ -n "$ECR_URI" ]; then
-    FRONTEND_CONTEXT="$FRONTEND_CONTEXT --context ecrUri=$ECR_URI"
-fi
-
-deploy_stack "CIAlert-Frontend" "$FRONTEND_CONTEXT"
-
-# Monitoring
-deploy_stack "CIAlert-Monitoring"
 
 cd ..
 
-# Get ALB URL
-if [[ " ${DEPLOYED_STACKS[@]} " =~ " CIAlert-Frontend " ]]; then
-    ALB_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerURL`].OutputValue' --output text 2>/dev/null || echo "")
-    ALB_DNS=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDNS`].OutputValue' --output text 2>/dev/null || echo "")
+# Get all URLs
+CLOUDFRONT_URL=""
+ALB_URL=""
+DASHBOARD_URL=""
+PIPELINE_URL=""
+
+if [ "$FRONTEND_SUCCESS" = true ]; then
+    CLOUDFRONT_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontUrl`].OutputValue' --output text 2>/dev/null || echo "")
+    ALB_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerUrl`].OutputValue' --output text 2>/dev/null || echo "")
 fi
 
-# Summary
+if [ "$MONITORING_SUCCESS" = true ]; then
+    DASHBOARD_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Monitoring --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`DashboardUrl`].OutputValue' --output text 2>/dev/null || echo "")
+fi
+
+if [ "$CICD_SUCCESS" = true ]; then
+    PIPELINE_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-CICD --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`PipelineUrl`].OutputValue' --output text 2>/dev/null || echo "")
+fi
+
+# Deployment Summary
 echo ""
 echo "📊 Production Deployment Summary"
 echo "================================"
 echo ""
-echo "✅ Successfully Deployed (${#DEPLOYED_STACKS[@]} stacks):"
-for stack in "${DEPLOYED_STACKS[@]}"; do
-    echo "  ✓ $stack"
+
+# Count deployments
+SUCCESSFUL_STACKS=1  # Core always succeeds or exits
+TOTAL_STACKS=1
+
+for stack in "KB_SUCCESS" "AGENT_SUCCESS" "PROD_SUCCESS" "FRONTEND_SUCCESS" "MONITORING_SUCCESS"; do
+    TOTAL_STACKS=$((TOTAL_STACKS + 1))
+    if [ "${!stack}" = true ]; then
+        SUCCESSFUL_STACKS=$((SUCCESSFUL_STACKS + 1))
+    fi
 done
 
-if [ ${#FAILED_STACKS[@]} -gt 0 ]; then
-    echo ""
-    echo "❌ Failed Deployments (${#FAILED_STACKS[@]} stacks):"
-    for stack in "${FAILED_STACKS[@]}"; do
-        echo "  ✗ $stack"
-    done
+if [ "$CICD_SUCCESS" = true ]; then
+    TOTAL_STACKS=$((TOTAL_STACKS + 1))
+    SUCCESSFUL_STACKS=$((SUCCESSFUL_STACKS + 1))
 fi
 
-echo ""
-echo "📦 CI/CD Pipeline:"
-if [ -n "$ECR_URI" ]; then
-    echo "  ECR Repository: $ECR_URI"
-    echo "  CodeBuild Project: ci-alert-build"
-    echo "  CodePipeline: ci-alert-pipeline"
+echo "✅ Successfully Deployed ($SUCCESSFUL_STACKS/$TOTAL_STACKS stacks):"
+echo "  ✓ CIAlertStack (Core Infrastructure)"
+[ "$KB_SUCCESS" = true ] && echo "  ✓ CIAlert-KnowledgeBase (S3 + OpenSearch + Bedrock KB)"
+[ "$AGENT_SUCCESS" = true ] && echo "  ✓ CIAlert-BedrockAgent (RAG Agent)"
+[ "$PROD_SUCCESS" = true ] && echo "  ✓ CIAlert-Production (Enhanced Monitoring)"
+[ "$FRONTEND_SUCCESS" = true ] && echo "  ✓ CIAlert-Frontend (ALB + ECS + CloudFront)"
+[ "$MONITORING_SUCCESS" = true ] && echo "  ✓ CIAlert-Monitoring (CloudWatch Dashboards)"
+[ "$CICD_SUCCESS" = true ] && echo "  ✓ CIAlert-CICD (GitHub Pipeline)"
+
+# Failed deployments
+FAILED_COUNT=$((TOTAL_STACKS - SUCCESSFUL_STACKS))
+if [ $FAILED_COUNT -gt 0 ]; then
+    echo ""
+    echo "❌ Failed Deployments ($FAILED_COUNT stacks):"
+    [ "$KB_SUCCESS" = false ] && echo "  ✗ CIAlert-KnowledgeBase"
+    [ "$AGENT_SUCCESS" = false ] && echo "  ✗ CIAlert-BedrockAgent"
+    [ "$PROD_SUCCESS" = false ] && echo "  ✗ CIAlert-Production"
+    [ "$FRONTEND_SUCCESS" = false ] && echo "  ✗ CIAlert-Frontend"
+    [ "$MONITORING_SUCCESS" = false ] && echo "  ✗ CIAlert-Monitoring"
 fi
 
 echo ""
 echo "🌐 Production URLs:"
-if [ -n "$ALB_URL" ]; then
-    echo "  Application: $ALB_URL"
-fi
-if [ -n "$ALB_DNS" ]; then
-    echo "  ALB DNS: $ALB_DNS"
-fi
-if [ -n "$DOMAIN_NAME" ]; then
-    echo "  Custom Domain: https://$DOMAIN_NAME"
-fi
+[ -n "$CLOUDFRONT_URL" ] && echo "  🎨 Frontend (CloudFront): $CLOUDFRONT_URL"
+[ -n "$ALB_URL" ] && echo "  🔗 Frontend (ALB): $ALB_URL"
+[ -n "$API_URL" ] && echo "  🔌 API Gateway: $API_URL"
+[ -n "$DASHBOARD_URL" ] && echo "  📊 Monitoring Dashboard: $DASHBOARD_URL"
+[ -n "$PIPELINE_URL" ] && echo "  🚀 CI/CD Pipeline: $PIPELINE_URL"
 
 echo ""
 echo "🏗️ Production Features Deployed:"
-echo "  ✓ CI/CD Pipeline with GitHub integration"
-echo "  ✓ ECR for container image management"
-echo "  ✓ CodeBuild for automated Docker builds"
-echo "  ✓ Application Load Balancer with health checks"
-echo "  ✓ ECS Fargate with auto-scaling (2-10 tasks)"
-echo "  ✓ VPC with public/private subnets"
-echo "  ✓ WAF with security rules and rate limiting"
-echo "  ✓ CloudWatch Container Insights"
-echo "  ✓ Security headers and HTTPS redirect"
-echo "  ✓ Gzip compression and caching"
-echo "  ✓ Non-root container execution"
-
-if [ -n "$CERT_ARN" ]; then
-    echo "  ✓ SSL/TLS certificate configured"
-fi
-
-if [ -n "$DOMAIN_NAME" ]; then
-    echo "  ✓ Custom domain with Route53 alias"
-fi
+echo "  ✓ DynamoDB tables with encryption"
+echo "  ✓ Lambda functions with monitoring"
+echo "  ✓ API Gateway with Cognito auth"
+echo "  ✓ Cognito User Pool with MFA"
+echo "  ✓ EventBridge scheduled rules"
+echo "  ✓ SQS queues with DLQ"
+[ "$KB_SUCCESS" = true ] && echo "  ✓ S3 + OpenSearch Serverless + Bedrock KB"
+[ "$AGENT_SUCCESS" = true ] && echo "  ✓ Bedrock Agent with RAG actions"
+[ "$FRONTEND_SUCCESS" = true ] && echo "  ✓ CloudFront CDN with caching"
+[ "$FRONTEND_SUCCESS" = true ] && echo "  ✓ ALB + ECS Fargate auto-scaling"
+[ "$FRONTEND_SUCCESS" = true ] && echo "  ✓ VPC with public/private subnets"
+[ "$FRONTEND_SUCCESS" = true ] && echo "  ✓ WAF with security rules"
+[ "$MONITORING_SUCCESS" = true ] && echo "  ✓ CloudWatch dashboards and alarms"
+[ "$CICD_SUCCESS" = true ] && echo "  ✓ GitHub integration with CodePipeline"
 
 echo ""
 echo "📝 Next Steps:"
-echo "1. Wait 5-10 minutes for ECS tasks to start"
-echo "2. Test application: $ALB_URL"
-echo "3. Setup monitoring alerts"
-echo "4. Configure custom domain DNS (if applicable)"
-echo "5. Enable Bedrock models for AI features"
-echo "6. Setup SES for email notifications"
+echo "1. Wait 5-10 minutes for services to initialize"
+echo "2. Enable Bedrock models in AWS Console:"
+echo "   - anthropic.claude-3-5-sonnet-20250106-v1:0"
+echo "   - anthropic.claude-3-5-haiku-20241022"
+echo "   - amazon.titan-embed-text-v1"
+echo "3. Setup SES for email notifications:"
+echo "   bash 'shell scripts/setup-ses.sh'"
+echo "4. Test the system:"
+[ -n "$CLOUDFRONT_URL" ] && echo "   curl $CLOUDFRONT_URL"
+[ -n "$API_URL" ] && echo "   curl $API_URL/insights"
+echo "5. Upload sample data:"
+echo "   bash upload-sample-data.sh"
+echo "6. Connect Knowledge Base to Agent:"
+echo "   bash connect-knowledge-base.sh"
 
 echo ""
-echo "🔧 Production Management Commands:"
-echo "  # Scale service"
+echo "🔧 Management Commands:"
+echo "  # Scale ECS service"
 echo "  aws ecs update-service --cluster ci-alert-frontend-cluster --service FrontendService --desired-count 4"
 echo ""
-echo "  # View logs"
+echo "  # View application logs"
 echo "  aws logs tail /ecs/ci-alert-frontend --follow"
 echo ""
-echo "  # Check service health"
-echo "  aws elbv2 describe-target-health --target-group-arn \$(aws elbv2 describe-target-groups --names FrontendTargetGroup --query 'TargetGroups[0].TargetGroupArn' --output text)"
+echo "  # Check CloudFront cache"
+echo "  aws cloudfront get-distribution --id DISTRIBUTION_ID"
+echo ""
+echo "  # Invalidate CloudFront cache"
+echo "  aws cloudfront create-invalidation --distribution-id DISTRIBUTION_ID --paths '/*'"
 
 echo ""
 echo "🎉 Production deployment complete!"
-echo "   Your CI Alert System is now running on production-grade infrastructure"
+echo "   Your CI Alert System is running on enterprise-grade AWS infrastructure"
+echo "   with CloudFront CDN, auto-scaling, and comprehensive monitoring."
