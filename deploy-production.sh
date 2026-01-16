@@ -34,15 +34,39 @@ cd infrastructure
 npm install
 npm run build
 
+# Helper function to deploy or update stack
+deploy_or_update() {
+    local stack_name=$1
+    local context_params=$2
+    local description=$3
+    
+    echo ""
+    echo "📦 Deploying $stack_name ($description)..."
+    
+    # Check if stack exists
+    if aws cloudformation describe-stacks --stack-name $stack_name --region $REGION &>/dev/null; then
+        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $stack_name --region $REGION --query 'Stacks[0].StackStatus' --output text)
+        echo "  ℹ️  Stack exists with status: $STACK_STATUS"
+        
+        if [[ "$STACK_STATUS" == *"COMPLETE"* ]] || [[ "$STACK_STATUS" == *"UPDATE_ROLLBACK_COMPLETE"* ]]; then
+            echo "  🔄 Updating existing stack..."
+        fi
+    else
+        echo "  ➕ Creating new stack..."
+    fi
+    
+    # Deploy/update
+    if eval "cdk deploy $stack_name --require-approval never $context_params"; then
+        echo "  ✅ $stack_name deployed/updated successfully"
+        return 0
+    else
+        echo "  ⚠️  $stack_name deployment had issues (may require manual setup)"
+        return 1
+    fi
+}
+
 # Deploy Core Stack
-echo ""
-echo "📦 Deploying Core Infrastructure..."
-if cdk deploy CIAlertStack --require-approval never; then
-    echo "✅ CIAlertStack deployed successfully"
-else
-    echo "❌ CIAlertStack failed"
-    exit 1
-fi
+deploy_or_update "CIAlertStack" "" "Core Infrastructure" || exit 1
 
 # Get core stack outputs
 API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text 2>/dev/null || echo "")
@@ -56,52 +80,32 @@ echo "  User Pool ID: $USER_POOL_ID"
 echo "  Client ID: $CLIENT_ID"
 
 # Deploy Knowledge Base
-echo ""
-echo "📦 Deploying Knowledge Base (S3 + OpenSearch + Bedrock KB)..."
 KB_SUCCESS=false
-if cdk deploy CIAlert-KnowledgeBase --require-approval never; then
-    echo "✅ CIAlert-KnowledgeBase deployed successfully"
+if deploy_or_update "CIAlert-KnowledgeBase" "" "S3 + OpenSearch + Bedrock KB"; then
     KB_SUCCESS=true
-else
-    echo "❌ CIAlert-KnowledgeBase failed (may require manual setup)"
 fi
 
 # Deploy Bedrock Agent
-echo ""
-echo "📦 Deploying Bedrock Agent (RAG with actions)..."
 AGENT_SUCCESS=false
-if cdk deploy CIAlert-BedrockAgent --require-approval never; then
-    echo "✅ CIAlert-BedrockAgent deployed successfully"
+if deploy_or_update "CIAlert-BedrockAgent" "" "RAG Agent with actions"; then
     AGENT_SUCCESS=true
-else
-    echo "❌ CIAlert-BedrockAgent failed (may require manual setup)"
 fi
 
 # Deploy Frontend with CloudFront
-echo ""
-echo "📦 Deploying Frontend (ALB + ECS + CloudFront)..."
 CONTEXT_PARAMS="--context apiUrl=\"$API_URL\" --context userPoolId=\"$USER_POOL_ID\" --context userPoolClientId=\"$CLIENT_ID\""
 if [ -n "$DOMAIN_NAME" ] && [ -n "$CERT_ARN" ]; then
     CONTEXT_PARAMS="$CONTEXT_PARAMS --context domainName=\"$DOMAIN_NAME\" --context certificateArn=\"$CERT_ARN\""
 fi
 
 FRONTEND_SUCCESS=false
-if eval "cdk deploy CIAlert-Frontend --require-approval never $CONTEXT_PARAMS"; then
-    echo "✅ CIAlert-Frontend deployed successfully"
+if deploy_or_update "CIAlert-Frontend" "$CONTEXT_PARAMS" "ALB + ECS + CloudFront"; then
     FRONTEND_SUCCESS=true
-else
-    echo "❌ CIAlert-Frontend failed"
 fi
 
 # Deploy Monitoring
-echo ""
-echo "📦 Deploying Monitoring (CloudWatch dashboards)..."
 MONITORING_SUCCESS=false
-if cdk deploy CIAlert-Monitoring --require-approval never; then
-    echo "✅ CIAlert-Monitoring deployed successfully"
+if deploy_or_update "CIAlert-Monitoring" "" "CloudWatch dashboards"; then
     MONITORING_SUCCESS=true
-else
-    echo "❌ CIAlert-Monitoring failed"
 fi
 
 # Deploy CI/CD (optional)
@@ -110,12 +114,8 @@ read -p "Deploy CI/CD pipeline? (y/n): " -n 1 -r
 echo
 CICD_SUCCESS=false
 if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "📦 Deploying CI/CD Pipeline..."
-    if cdk deploy CIAlert-CICD --require-approval never; then
-        echo "✅ CIAlert-CICD deployed successfully"
+    if deploy_or_update "CIAlert-CICD" "" "GitHub Pipeline"; then
         CICD_SUCCESS=true
-    else
-        echo "❌ CIAlert-CICD failed"
     fi
 else
     echo "⏭️ Skipping CI/CD deployment"
@@ -171,7 +171,7 @@ if [ "$CICD_SUCCESS" = true ]; then
     SUCCESSFUL_STACKS=$((SUCCESSFUL_STACKS + 1))
 fi
 
-echo "✅ Successfully Deployed ($SUCCESSFUL_STACKS/$TOTAL_STACKS stacks):"
+echo "✅ Successfully Deployed/Updated ($SUCCESSFUL_STACKS/$TOTAL_STACKS stacks):"
 echo "  ✓ CIAlertStack (Core Infrastructure)"
 [ "$KB_SUCCESS" = true ] && echo "  ✓ CIAlert-KnowledgeBase (S3 + OpenSearch + Bedrock KB)"
 [ "$AGENT_SUCCESS" = true ] && echo "  ✓ CIAlert-BedrockAgent (RAG Agent)"
@@ -179,14 +179,14 @@ echo "  ✓ CIAlertStack (Core Infrastructure)"
 [ "$MONITORING_SUCCESS" = true ] && echo "  ✓ CIAlert-Monitoring (CloudWatch Dashboards)"
 [ "$CICD_SUCCESS" = true ] && echo "  ✓ CIAlert-CICD (GitHub Pipeline)"
 
-FAILED_COUNT=$((TOTAL_STACKS - SUCCESSFUL_STACKS))
-if [ $FAILED_COUNT -gt 0 ]; then
+PARTIAL_COUNT=$((TOTAL_STACKS - SUCCESSFUL_STACKS))
+if [ $PARTIAL_COUNT -gt 0 ]; then
     echo ""
-    echo "❌ Failed Deployments ($FAILED_COUNT stacks):"
-    [ "$KB_SUCCESS" = false ] && echo "  ✗ CIAlert-KnowledgeBase"
-    [ "$AGENT_SUCCESS" = false ] && echo "  ✗ CIAlert-BedrockAgent"
-    [ "$FRONTEND_SUCCESS" = false ] && echo "  ✗ CIAlert-Frontend"
-    [ "$MONITORING_SUCCESS" = false ] && echo "  ✗ CIAlert-Monitoring"
+    echo "⚠️  Partial Deployments ($PARTIAL_COUNT stacks):"
+    [ "$KB_SUCCESS" = false ] && echo "  ⚠ CIAlert-KnowledgeBase (may require manual setup)"
+    [ "$AGENT_SUCCESS" = false ] && echo "  ⚠ CIAlert-BedrockAgent (may require manual setup)"
+    [ "$FRONTEND_SUCCESS" = false ] && echo "  ⚠ CIAlert-Frontend (check logs for details)"
+    [ "$MONITORING_SUCCESS" = false ] && echo "  ⚠ CIAlert-Monitoring (check logs for details)"
 fi
 
 echo ""
@@ -236,9 +236,9 @@ echo "   bash 'shell scripts/setup-test-user.sh'"
 
 if [ "$KB_SUCCESS" = false ] || [ "$AGENT_SUCCESS" = false ]; then
     echo ""
-    echo "⚠️  Manual Bedrock Setup Required:"
+    echo "⚠️  Manual Bedrock Setup May Be Required:"
     echo "   CloudFormation hooks may block automated deployment."
-    echo "   Create manually in AWS Console → Bedrock"
+    echo "   Create manually in AWS Console → Bedrock if needed"
 fi
 
 echo ""
