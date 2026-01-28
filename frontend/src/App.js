@@ -131,15 +131,24 @@ function App() {
   const loadInsights = async () => {
     try {
       const token = await getAuthToken();
+      console.log('Loading insights from:', `${API_URL}insights`);
       const res = await fetch(`${API_URL}insights`, {
         headers: { 
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         }
       });
-      if (!res.ok) throw new Error('Failed to load insights');
+      console.log('Insights response status:', res.status);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Insights API error:', errorText);
+        throw new Error('Failed to load insights');
+      }
       const data = await res.json();
-      setInsights(data.insights || []);
+      console.log('Insights data received:', data);
+      const insightsList = data.insights || [];
+      console.log('Setting insights:', insightsList.length, 'items');
+      setInsights(insightsList);
     } catch (err) {
       console.error('Load insights error:', err);
       setInsights([]);
@@ -418,20 +427,26 @@ function App() {
                 {loading ? '⏳ Ingesting...' : '🔄 Trigger Ingestion'}
               </button>
             </div>
+            <div className="debug-info" style={{padding: '10px', background: '#f0f0f0', marginBottom: '10px', fontSize: '12px'}}>
+              <strong>Debug:</strong> Found {insights.length} insights | API: {API_URL}
+            </div>
             {insights.length === 0 ? (
               <div className="empty-state">
                 <p>No insights available yet.</p>
                 <p>Add molecules to your watchlist and click "Trigger Ingestion" to fetch latest data.</p>
+                <button onClick={loadInsights} className="btn-primary" style={{marginTop: '10px'}}>
+                  🔄 Refresh Insights
+                </button>
               </div>
             ) : (
               <div className="insights-list">
                 {insights.filter(insight => !insight.summary?.startsWith('```json')).map((insight, i) => (
                   <div key={i} className="insight-card">
                     <div className="insight-header">
-                      <strong>{insight.molecule}</strong>
-                      <span className="insight-date">{new Date(insight.timestamp).toLocaleDateString()}</span>
+                      <strong>{insight.molecule || 'Unknown'}</strong>
+                      <span className="insight-date">{insight.timestamp ? new Date(insight.timestamp).toLocaleDateString() : 'No date'}</span>
                     </div>
-                    <p>{insight.summary}</p>
+                    <p>{insight.summary || insight.insights || 'No summary available'}</p>
                     {insight.source && <small className="insight-source">Source: {insight.source}</small>}
                   </div>
                 ))}

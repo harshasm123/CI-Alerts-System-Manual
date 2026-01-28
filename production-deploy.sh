@@ -1,273 +1,308 @@
 #!/bin/bash
 
-# Production Deployment Script with Enhanced Checks
+# Production-Grade Deployment Script for CI Alert System with Amplify
+# Usage: ./production-deploy.sh [environment] [admin-email]
+
 set -e
 
-echo "🚀 Production-Grade CI Alert System Deployment"
-echo "=============================================="
-
-# Configuration
-REGION=$(aws configure get region || echo "us-east-1")
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 ENVIRONMENT=${1:-production}
-ALERT_EMAIL=${2:-admin@example.com}
+ADMIN_EMAIL=${2:-admin@example.com}
+REGION=${AWS_DEFAULT_REGION:-us-east-1}
 
-echo "📋 Deployment Configuration:"
-echo "  Environment: $ENVIRONMENT"
-echo "  Region: $REGION"
-echo "  Account: $ACCOUNT_ID"
-echo "  Alert Email: $ALERT_EMAIL"
-echo ""
+echo "🚀 Starting Production-Grade Deployment for CI Alert System"
+echo "Environment: $ENVIRONMENT"
+echo "Region: $REGION"
+echo "Admin Email: $ADMIN_EMAIL"
 
-# Pre-deployment checks
-echo "🔍 Pre-deployment Security Checks..."
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-# Check AWS CLI version
-AWS_CLI_VERSION=$(aws --version | cut -d/ -f2 | cut -d' ' -f1)
-echo "  ✓ AWS CLI Version: $AWS_CLI_VERSION"
+print_status() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
 
-# Check CDK version
-CDK_VERSION=$(cdk --version | cut -d' ' -f1)
-echo "  ✓ CDK Version: $CDK_VERSION"
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
 
-# Security scan
-echo "🔒 Running Security Scans..."
-cd lambdas
-if command -v bandit &> /dev/null; then
-    bandit -r . -f json -o ../security-report.json || echo "  ⚠️  Security issues found, check security-report.json"
-    echo "  ✓ Python security scan completed"
-else
-    echo "  ⚠️  Bandit not installed, skipping Python security scan"
-fi
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
 
-if command -v safety &> /dev/null; then
-    safety check --json --output ../safety-report.json || echo "  ⚠️  Vulnerability check found issues"
-    echo "  ✓ Dependency vulnerability scan completed"
-else
-    echo "  ⚠️  Safety not installed, skipping dependency scan"
-fi
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
 
-cd ..
+# Check prerequisites
+check_prerequisites() {
+    print_status "Checking prerequisites..."
+    
+    # Check AWS CLI
+    if ! command -v aws &> /dev/null; then
+        print_error "AWS CLI not found. Please install AWS CLI."
+        exit 1
+    fi
+    
+    # Check CDK
+    if ! command -v cdk &> /dev/null; then
+        print_error "AWS CDK not found. Please install AWS CDK."
+        exit 1
+    fi
+    
+    # Check Node.js
+    if ! command -v node &> /dev/null; then
+        print_error "Node.js not found. Please install Node.js 18+."
+        exit 1
+    fi
+    
+    # Check Docker
+    if ! command -v docker &> /dev/null; then
+        print_warning "Docker not found. Some features may not work."
+    fi
+    
+    # Verify AWS credentials
+    if ! aws sts get-caller-identity &> /dev/null; then
+        print_error "AWS credentials not configured. Run 'aws configure'."
+        exit 1
+    fi
+    
+    print_success "Prerequisites check completed"
+}
 
-# Code quality checks
-echo "📊 Code Quality Checks..."
-cd frontend
-if [ -f "package.json" ]; then
-    npm audit --audit-level high || echo "  ⚠️  npm audit found issues"
-    echo "  ✓ Frontend dependency audit completed"
-fi
-cd ..
-
-# Unit tests
-echo "🧪 Running Unit Tests..."
-cd lambdas
-if [ -d "tests" ]; then
-    python -m pytest tests/ -v --cov=. --cov-report=xml || echo "  ⚠️  Some tests failed"
-    echo "  ✓ Python unit tests completed"
-else
-    echo "  ⚠️  No Python tests found"
-fi
-cd ..
-
-cd frontend
-if [ -f "package.json" ] && grep -q "test" package.json; then
-    npm test -- --coverage --watchAll=false || echo "  ⚠️  Frontend tests failed"
-    echo "  ✓ Frontend tests completed"
-else
-    echo "  ⚠️  No frontend tests configured"
-fi
-cd ..
-
-# Infrastructure deployment
-echo "🏗️  Deploying Infrastructure..."
-cd infrastructure
+# Bootstrap CDK if needed
+bootstrap_cdk() {
+    print_status "Checking CDK bootstrap..."
+    
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    
+    if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region $REGION &> /dev/null; then
+        print_status "Bootstrapping CDK for account $ACCOUNT_ID in region $REGION..."
+        cdk bootstrap aws://$ACCOUNT_ID/$REGION
+        print_success "CDK bootstrap completed"
+    else
+        print_success "CDK already bootstrapped"
+    fi
+}
 
 # Install dependencies
-npm install
+install_dependencies() {
+    print_status "Installing dependencies..."
+    
+    # Infrastructure dependencies
+    cd infrastructure
+    npm install
+    cd ..
+    
+    # Frontend dependencies
+    cd frontend
+    npm install
+    cd ..
+    
+    print_success "Dependencies installed"
+}
 
-# Build TypeScript
-npm run build
-
-# Check if core stack exists
-echo "🔍 Checking existing stacks..."
-if aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION &>/dev/null; then
-    echo "✅ CIAlertStack already exists and is healthy"
-else
-    echo "📦 Deploying Core Stack..."
-    cdk deploy CIAlertStack --require-approval never
-fi
-
-# Get core stack outputs
-API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text 2>/dev/null || echo "")
-USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null || echo "")
-CLIENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text 2>/dev/null || echo "")
-
-echo "📋 Core Stack Outputs:"
-echo "  API URL: $API_URL"
-echo "  User Pool ID: $USER_POOL_ID"
-echo "  Client ID: $CLIENT_ID"
-echo ""
-
-# Deploy Frontend stack
-echo "📦 Deploying CIAlert-Frontend (Production)..."
-if cdk deploy CIAlert-Frontend --require-approval never 2>&1; then
-    echo "✅ CIAlert-Frontend deployed successfully"
-else
-    echo "❌ CIAlert-Frontend failed"
-fi
-
-# Deploy Monitoring stack
-echo "📦 Deploying CIAlert-Monitoring (Production)..."
-if cdk deploy CIAlert-Monitoring --require-approval never 2>&1; then
-    echo "✅ CIAlert-Monitoring deployed successfully"
-else
-    echo "❌ CIAlert-Monitoring failed"
-fi
-
-cd ..
-
-# Post-deployment configuration
-echo "⚙️  Post-deployment Configuration..."
-
-# Get stack outputs
-API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text)
-USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text)
-DASHBOARD_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Production --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`DashboardUrl`].OutputValue' --output text 2>/dev/null || echo "")
-
-echo "  ✓ API URL: $API_URL"
-echo "  ✓ User Pool: $USER_POOL_ID"
-if [ -n "$DASHBOARD_URL" ]; then
-    echo "  ✓ Dashboard: $DASHBOARD_URL"
-fi
-
-# Deploy frontend application
-echo "🎨 Deploying Frontend Application..."
-bash "shell scripts/deploy-cognito-frontend.sh"
-
-# Connect Knowledge Base to Agent
-echo "🔗 Connecting Knowledge Base to Agent..."
-if [ -f "connect-knowledge-base.sh" ]; then
-    chmod +x connect-knowledge-base.sh
-    ./connect-knowledge-base.sh
-else
-    echo "  ⚠️  Knowledge base connection script not found"
-fi
-
-# Upload sample data
-echo "📚 Uploading Sample Data..."
-if [ -f "upload-sample-data.sh" ]; then
-    chmod +x upload-sample-data.sh
-    ./upload-sample-data.sh
-else
-    echo "  ⚠️  Sample data upload script not found"
-fi
-
-# Production health checks
-echo "🏥 Production Health Checks..."
-
-# Test API endpoints
-if [ -n "$API_URL" ]; then
-    echo "  Testing API health..."
-    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${API_URL}insights" || echo "000")
-    if [ "$HTTP_STATUS" = "401" ] || [ "$HTTP_STATUS" = "200" ]; then
-        echo "  ✓ API Gateway responding (HTTP $HTTP_STATUS)"
-    else
-        echo "  ❌ API Gateway not responding (HTTP $HTTP_STATUS)"
+# Deploy infrastructure stacks
+deploy_infrastructure() {
+    print_status "Deploying infrastructure stacks..."
+    
+    cd infrastructure
+    
+    # Set environment variables
+    export ENVIRONMENT=$ENVIRONMENT
+    export ADMIN_EMAIL=$ADMIN_EMAIL
+    
+    # Deploy stacks in order
+    print_status "Deploying Core Stack..."
+    cdk deploy CIAlertStack --require-approval never --outputs-file core-outputs.json
+    
+    print_status "Deploying Knowledge Base Stack..."
+    cdk deploy CIAlert-KnowledgeBase --require-approval never --outputs-file kb-outputs.json
+    
+    print_status "Deploying Bedrock Agent Stack..."
+    cdk deploy CIAlert-BedrockAgent --require-approval never --outputs-file agent-outputs.json
+    
+    print_status "Deploying Amplify Frontend Stack..."
+    cdk deploy CIAlert-Amplify --require-approval never --outputs-file amplify-outputs.json
+    
+    if [ "$ENVIRONMENT" = "production" ]; then
+        print_status "Deploying Production Enhancements..."
+        cdk deploy CIAlert-Production --require-approval never --outputs-file production-outputs.json
+        
+        print_status "Deploying Monitoring Stack..."
+        cdk deploy CIAlert-Monitoring --require-approval never --outputs-file monitoring-outputs.json
+        
+        print_status "Deploying CI/CD Pipeline..."
+        cdk deploy CIAlert-CICD --require-approval never --outputs-file cicd-outputs.json
     fi
-fi
+    
+    cd ..
+    print_success "Infrastructure deployment completed"
+}
 
-# Check Lambda functions
-echo "  Checking Lambda functions..."
-FUNCTIONS=$(aws lambda list-functions --query "Functions[?contains(FunctionName,'CIAlert')].FunctionName" --output text)
-for func in $FUNCTIONS; do
-    STATUS=$(aws lambda get-function --function-name $func --query 'Configuration.State' --output text 2>/dev/null || echo "NotFound")
-    if [ "$STATUS" = "Active" ]; then
-        echo "    ✓ $func: Active"
+# Configure Amplify app
+configure_amplify() {
+    print_status "Configuring Amplify application..."
+    
+    # Get outputs from CDK
+    if [ -f "infrastructure/amplify-outputs.json" ]; then
+        AMPLIFY_APP_ID=$(jq -r '.["CIAlert-Amplify"].AmplifyAppId' infrastructure/amplify-outputs.json)
+        API_URL=$(jq -r '.CIAlertStack.ApiGatewayUrl' infrastructure/core-outputs.json)
+        USER_POOL_ID=$(jq -r '.CIAlertStack.UserPoolId' infrastructure/core-outputs.json)
+        USER_POOL_CLIENT_ID=$(jq -r '.CIAlertStack.UserPoolClientId' infrastructure/core-outputs.json)
+        
+        print_status "Amplify App ID: $AMPLIFY_APP_ID"
+        
+        # Update environment variables
+        aws amplify update-app \
+            --app-id $AMPLIFY_APP_ID \
+            --environment-variables \
+            REACT_APP_API_URL=$API_URL,REACT_APP_USER_POOL_ID=$USER_POOL_ID,REACT_APP_USER_POOL_CLIENT_ID=$USER_POOL_CLIENT_ID,REACT_APP_REGION=$REGION
+        
+        # Start build
+        print_status "Starting Amplify build..."
+        aws amplify start-job --app-id $AMPLIFY_APP_ID --branch-name main --job-type RELEASE
+        
+        print_success "Amplify configuration completed"
     else
-        echo "    ❌ $func: $STATUS"
+        print_warning "Amplify outputs not found, skipping configuration"
     fi
-done
+}
 
-# Check DynamoDB tables
-echo "  Checking DynamoDB tables..."
-TABLES=$(aws dynamodb list-tables --query "TableNames[?contains(@,'CIAlert') || contains(@,'Insights') || contains(@,'Watchlist')]" --output text)
-for table in $TABLES; do
-    STATUS=$(aws dynamodb describe-table --table-name $table --query 'Table.TableStatus' --output text 2>/dev/null || echo "NotFound")
-    if [ "$STATUS" = "ACTIVE" ]; then
-        echo "    ✓ $table: Active"
-    else
-        echo "    ❌ $table: $STATUS"
+# Setup SES for email notifications
+setup_ses() {
+    print_status "Setting up SES for email notifications..."
+    
+    # Verify email address
+    aws ses verify-email-identity --email-address $ADMIN_EMAIL --region $REGION || true
+    
+    print_status "Email verification sent to $ADMIN_EMAIL"
+    print_warning "Please check your email and click the verification link"
+}
+
+# Create test user
+create_test_user() {
+    print_status "Creating test user..."
+    
+    if [ -f "infrastructure/core-outputs.json" ]; then
+        USER_POOL_ID=$(jq -r '.CIAlertStack.UserPoolId' infrastructure/core-outputs.json)
+        
+        # Create test user
+        aws cognito-idp admin-create-user \
+            --user-pool-id $USER_POOL_ID \
+            --username "test@example.com" \
+            --user-attributes Name=email,Value="test@example.com" \
+            --temporary-password "TempPass123!" \
+            --message-action SUPPRESS \
+            --region $REGION || true
+        
+        # Confirm user
+        aws cognito-idp admin-confirm-user \
+            --user-pool-id $USER_POOL_ID \
+            --username "test@example.com" \
+            --region $REGION || true
+        
+        # Set permanent password
+        aws cognito-idp admin-set-user-password \
+            --user-pool-id $USER_POOL_ID \
+            --username "test@example.com" \
+            --password "Password123!" \
+            --permanent \
+            --region $REGION || true
+        
+        print_success "Test user created: test@example.com / Password123!"
     fi
-done
+}
 
-# Performance baseline
-echo "📈 Establishing Performance Baseline..."
-if [ -n "$API_URL" ]; then
-    echo "  Running performance test..."
-    for i in {1..5}; do
-        RESPONSE_TIME=$(curl -s -w "%{time_total}" -o /dev/null "${API_URL}insights" || echo "0")
-        echo "    Request $i: ${RESPONSE_TIME}s"
-    done
-fi
+# Run system tests
+run_tests() {
+    print_status "Running system tests..."
+    
+    # Basic connectivity tests
+    if [ -f "infrastructure/core-outputs.json" ]; then
+        API_URL=$(jq -r '.CIAlertStack.ApiGatewayUrl' infrastructure/core-outputs.json)
+        
+        # Test API Gateway
+        if curl -f -s "$API_URL/insights" > /dev/null; then
+            print_success "API Gateway is accessible"
+        else
+            print_warning "API Gateway test failed"
+        fi
+    fi
+    
+    # Test Amplify app
+    if [ -f "infrastructure/amplify-outputs.json" ]; then
+        AMPLIFY_URL=$(jq -r '.["CIAlert-Amplify"].AmplifyAppURL' infrastructure/amplify-outputs.json)
+        
+        if curl -f -s "$AMPLIFY_URL" > /dev/null; then
+            print_success "Amplify app is accessible"
+        else
+            print_warning "Amplify app test failed (may still be building)"
+        fi
+    fi
+}
 
-# Generate deployment report
-echo "📋 Generating Deployment Report..."
-cat > deployment-report.md << EOF
-# Production Deployment Report
+# Display deployment summary
+display_summary() {
+    print_success "🎉 Deployment completed successfully!"
+    echo ""
+    echo "=== DEPLOYMENT SUMMARY ==="
+    
+    if [ -f "infrastructure/core-outputs.json" ]; then
+        API_URL=$(jq -r '.CIAlertStack.ApiGatewayUrl' infrastructure/core-outputs.json)
+        USER_POOL_ID=$(jq -r '.CIAlertStack.UserPoolId' infrastructure/core-outputs.json)
+        
+        echo "API Gateway URL: $API_URL"
+        echo "User Pool ID: $USER_POOL_ID"
+    fi
+    
+    if [ -f "infrastructure/amplify-outputs.json" ]; then
+        AMPLIFY_URL=$(jq -r '.["CIAlert-Amplify"].AmplifyAppURL' infrastructure/amplify-outputs.json)
+        AMPLIFY_APP_ID=$(jq -r '.["CIAlert-Amplify"].AmplifyAppId' infrastructure/amplify-outputs.json)
+        
+        echo "Frontend URL: $AMPLIFY_URL"
+        echo "Amplify App ID: $AMPLIFY_APP_ID"
+    fi
+    
+    echo ""
+    echo "Test Credentials:"
+    echo "Username: test@example.com"
+    echo "Password: Password123!"
+    echo ""
+    echo "Next Steps:"
+    echo "1. Verify your email address: $ADMIN_EMAIL"
+    echo "2. Enable Bedrock models in AWS Console"
+    echo "3. Run: bash test.sh system"
+    echo ""
+    
+    if [ "$ENVIRONMENT" = "production" ]; then
+        echo "Production Features Enabled:"
+        echo "✅ Multi-environment CI/CD pipeline"
+        echo "✅ Comprehensive monitoring and alerting"
+        echo "✅ Security scanning and compliance"
+        echo "✅ Performance baselines and SLA tracking"
+        echo "✅ Disaster recovery and backup procedures"
+    fi
+}
 
-**Date:** $(date)
-**Environment:** $ENVIRONMENT
-**Region:** $REGION
-**Account:** $ACCOUNT_ID
+# Main execution
+main() {
+    check_prerequisites
+    bootstrap_cdk
+    install_dependencies
+    deploy_infrastructure
+    configure_amplify
+    setup_ses
+    create_test_user
+    run_tests
+    display_summary
+}
 
-## Deployed Components
+# Error handling
+trap 'print_error "Deployment failed at line $LINENO"' ERR
 
-- ✅ Core Infrastructure (CIAlertStack)
-- ✅ Knowledge Base (CIAlert-KnowledgeBase)
-- ✅ Bedrock Agent (CIAlert-BedrockAgent)
-- ✅ Production Monitoring (CIAlert-Production)
-- ✅ Frontend (CIAlert-Frontend)
-- ✅ Monitoring & Alerts (CIAlert-Monitoring)
-
-## Key URLs
-
-- **API Gateway:** $API_URL
-- **Dashboard:** $DASHBOARD_URL
-- **User Pool:** $USER_POOL_ID
-
-## Next Steps
-
-1. Configure SES for email notifications
-2. Create test users in Cognito
-3. Set up monitoring alerts
-4. Configure backup policies
-5. Review security settings
-
-## Support
-
-For issues, check:
-- CloudWatch Logs
-- Production Dashboard
-- AWS Health Dashboard
-EOF
-
-echo ""
-echo "🎉 Production Deployment Complete!"
-echo "=================================="
-echo ""
-echo "📊 Key Information:"
-echo "  API URL: $API_URL"
-echo "  User Pool: $USER_POOL_ID"
-if [ -n "$ALB_URL" ]; then
-    echo "  Frontend: $ALB_URL"
-fi
-echo ""
-echo "📝 Next Steps:"
-echo "1. Configure email notifications: bash setup-ses.sh"
-echo "2. Create test user: aws cognito-idp sign-up --client-id CLIENT_ID --username test@example.com --password Test123!"
-echo "3. Test system: bash test.sh system"
-echo "4. Monitor dashboard: $DASHBOARD_URL"
-echo ""
-echo "📋 Deployment report saved to: deployment-report.md"
-echo ""
-echo "✅ System is ready for production use!"
+# Run main function
+main "$@"

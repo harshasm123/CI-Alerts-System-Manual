@@ -42,8 +42,8 @@ PRODUCTION-GRADE AWS SERVERLESS ARCHITECTURE WITH CLOUDFRONT
                     │                      │                      │
                     ▼                      ▼                      ▼
         ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-        │  Frontend Path  │    │   API Path      │    │  Static Assets  │
-        │  /app/*         │    │   /api/*        │    │  /assets/*      │
+        │  Amplify App    │    │   API Path      │    │  Static Assets  │
+        │  /*             │    │   /api/*        │    │  /assets/*      │
         └─────────────────┘    └─────────────────┘    └─────────────────┘
                     │                      │                      │
                     ▼                      ▼                      ▼
@@ -54,27 +54,32 @@ PRODUCTION-GRADE AWS SERVERLESS ARCHITECTURE WITH CLOUDFRONT
                     │
                     ▼
         ┌─────────────────────────┐
-        │      ECS Fargate        │
-        │   (React Application)   │
+        │    AWS Amplify          │
+        │  (Serverless Frontend)  │
         │                         │
         │  ┌─────────────────┐    │
-        │  │     Nginx       │    │
-        │  │  (Web Server)   │    │
+        │  │ React TypeScript│    │
+        │  │ - Material UI 5 │    │
+        │  │ - Redux Toolkit │    │
+        │  │ - React Router  │    │
+        │  │ - Recharts      │    │
         │  └─────────────────┘    │
         │  ┌─────────────────┐    │
-        │  │   React App     │    │
-        │  │ - Material UI   │    │
-        │  │ - Real-time     │    │
-        │  │ - Responsive    │    │
+        │  │ UI Components   │    │
+        │  │ - Dashboard     │    │
+        │  │ - Brand Intel   │    │
+        │  │ - AI Chatbot    │    │
+        │  │ - Alert Center  │    │
         │  └─────────────────┘    │
         └─────────────────────────┘
                     │
                     ▼
         ┌─────────────────────────┐
-        │    Auto Scaling         │
-        │   (2-10 Tasks)          │
-        │ - CPU/Memory Based      │
-        │ - Health Monitoring     │
+        │   Amplify Features      │
+        │ - Auto Deployment       │
+        │ - Branch Previews       │
+        │ - Custom Domains        │
+        │ - Performance Monitoring│
         └─────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
