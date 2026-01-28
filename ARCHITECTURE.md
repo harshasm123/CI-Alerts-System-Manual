@@ -1,10 +1,6 @@
-# CI Alert System - Architecture
-
-## CI/CD Pipeline
-```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                      CI / CD PIPELINE                                        │
-└──────────────────────────────────────────────────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────────────────────────────────────────────────┘  
 ┌──────────────────────┐      ┌────────────────────────┐      ┌───────────────────────────────┐
 │   Developer (Code)   │ ───▶ │    GitHub Repo         │ ───▶ │    GitHub Actions (CI/CD)     │
 └──────────────────────┘      └────────────────────────┘      │ Build • Test • Deploy • Auto  │
@@ -18,16 +14,15 @@
                                                                ▼                                   ▼
                                                  ┌───────────────────────────┐
                                                  │   GitHub Actions Deploy   │
-                                                 └──────────────┬────────────┘
+                                                     └──────────────┬────────────┘
                                                                 ▼
                                               ┌──────────────────────────────────┐
                                               │     Auto CloudFormation         │
                                               │ Provisions ALL AWS resources     │
                                               └──────────────────────────────────┘
-```
 
-## Application Runtime Pipeline
-```
+================================================================================================
+
 ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                  APPLICATION / RUNTIME PIPELINE                               │
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -81,10 +76,9 @@
                  ┌────────────────────────────────────────────────────┐
                  │ USER → Cloudflare → ALB → ECS → API Gateway → Lambda │
                  └────────────────────────────────────────────────────┘
-```
 
-## Data Pipeline (ETL + AI)
-```
+================================================================================================
+
 ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
 │                                     DATA PIPELINE (ETL + AI)                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -127,10 +121,9 @@
                     ┌──────────────────────────────┐
                     │  AI Pipeline (RAG Retrieval)  │
                     └──────────────────────────────┘
-```
 
-## AI Pipeline (RAG + LLM Agent)
-```
+================================================================================================
+
 ┌──────────────────────────────────────────────────────────────────────────────────────────────┐
 │                               AI PIPELINE (RAG + LLM AGENT)                                   │
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -155,10 +148,13 @@ OpenSearch (Vector Search)     S3 (KB Docs)                 Bedrock (Sonnet/Haik
                                                       │ AI Response
                                                       ▼
                                         Returned through API → User
-```
 
-## Daily Digest Pipeline
-```
+================================================================================================
+
+┌──────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                 DAILY DIGEST PIPELINE                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
+
 EventBridge (Daily Cron)
          │ 9 AM UTC Trigger
          ▼
@@ -169,33 +165,32 @@ Digest Lambda
                   │ HTML Email
                   ▼
               User Email Inbox
-```
 
-## System Components
+================================================================================================
 
-### Lambda Functions
-- **Ingestion Lambda** - Fetch data from PubMed, FDA, etc.
-- **Processor Lambda** - AI analysis with Claude 3.5 Haiku
-- **Insight Lambda** - Get/query insights data
-- **Watchlist Lambda** - Manage user watchlists
-- **Agent Lambda** - AI chat with RAG queries
-- **Digest Lambda** - Daily email summaries
+┌──────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                  OBSERVABILITY & SECURITY                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
 
-### Storage
-- **DynamoDB** - Insights, watchlists, user settings
-- **S3** - Raw documents, knowledge base files
-- **OpenSearch** - Vector embeddings for RAG
+CloudWatch Logs • CloudWatch Metrics • X-Ray Traces  
+CloudTrail Audit • SNS Alarms • Bedrock Metrics  
+OpenSearch Trace Logs • DynamoDB Throttles  
+WAF Analytics • ECS Container Insights
 
-### AI Models
-- **Claude Haiku** - Fast, cheap processing ($0.50/month)
-- **Claude Sonnet** - Advanced analysis ($44/month)
-- **Titan Embeddings** - Vector search ($15/month)
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                    SECURITY LAYERS                                           │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
 
-## Data Flow Summary
+• WAF Protection (Rate limiting, OWASP rules, DDoS protection)
+• Cognito Authentication (JWT tokens, MFA support)
+• IAM Least Privilege (Role-based access control)
+• VPC Security Groups (Network isolation)
+• S3/DynamoDB Encryption (At rest and in transit)
+• Secrets Manager (API keys and credentials)
+• CloudTrail Logging (All API calls audited)────────────────────────────────────────────────────────────────────────────────┘
 
-1. **Midnight**: EventBridge triggers data ingestion from external APIs
-2. **Processing**: SQS queues data for AI analysis and storage
-3. **Real-time**: Users interact via React frontend with authenticated API calls
-4. **AI Chat**: Agent Lambda provides RAG-powered responses using vector search
-5. **Morning**: EventBridge triggers daily digest emails with AI summaries
-6. **Monitoring**: All activities logged and monitored via CloudWatch
+CloudWatch Logs • CloudWatch Metrics • X-Ray Traces  
+CloudTrail Audit • SNS Alarms • Bedrock Metrics  
+OpenSearch Trace Logs • DynamoDB Throttles  
+Cloudflare Analytics (Edge security + traffic)
+
