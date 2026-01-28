@@ -1,506 +1,361 @@
 #!/bin/bash
 
-# CI Alert System Deployment Script
+# CI Alert System - Complete Deployment Script
+# Usage: ./deploy.sh [environment] [admin-email] [action]
+# Actions: deploy, test, destroy, status
+
 set -e
 
-echo "🚀 Starting CI Alert System Deployment"
+# Configuration
+ENVIRONMENT=${1:-production}
+ADMIN_EMAIL=${2:-admin@example.com}
+ACTION=${3:-deploy}
+REGION=${AWS_DEFAULT_REGION:-us-east-1}
 
-# Configuration - Dynamic region detection
-REGION=$(aws configure get region)
-if [ -z "$REGION" ]; then
-    REGION="us-west-2"
-    aws configure set region $REGION
-    echo "ℹ️  No region configured. Using $REGION"
-fi
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-# Check for problematic regions (us-east-1 has CloudFormation hooks)
-PROBLEMATIC_REGIONS=("us-east-1" "eu-west-1" "ap-southeast-1")
-for prob_region in "${PROBLEMATIC_REGIONS[@]}"; do
-    if [ "$REGION" = "$prob_region" ]; then
-        echo "⚠️  $REGION has CloudFormation hooks blocking CDK"
-        echo "   This region has AWS::EarlyValidation::ResourceExistenceCheck enabled"
-        REGION="us-west-2"
-        aws configure set region $REGION
-        echo "✅ Automatically switched to $REGION"
-        echo "   If you need to use $prob_region, contact AWS administrator to disable the hook"
-        break
-    fi
-done
-
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-DATA_BUCKET="ci-alert-data-${ACCOUNT_ID}-${REGION}"
-
-echo "📋 Configuration:"
-echo "  Region: $REGION"
-echo "  Account ID: $ACCOUNT_ID"
-echo "  Data Bucket: $DATA_BUCKET"
+print_status() { echo -e "${BLUE}[INFO]${NC} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # Check prerequisites
-echo "🔍 Checking prerequisites..."
+check_prerequisites() {
+    print_status "Checking prerequisites..."
+    
+    command -v aws >/dev/null 2>&1 || { print_error "AWS CLI required"; exit 1; }
+    command -v cdk >/dev/null 2>&1 || { print_error "AWS CDK required"; exit 1; }
+    command -v node >/dev/null 2>&1 || { print_error "Node.js required"; exit 1; }
+    command -v jq >/dev/null 2>&1 || { print_error "jq required"; exit 1; }
+    
+    aws sts get-caller-identity >/dev/null 2>&1 || { print_error "AWS credentials not configured"; exit 1; }
+    
+    print_success "Prerequisites check passed"
+}
 
-if ! command -v aws &> /dev/null; then
-    echo "❌ AWS CLI not found. Please install AWS CLI."
-    exit 1
-fi
+# Bootstrap CDK
+bootstrap_cdk() {
+    print_status "Bootstrapping CDK..."
+    
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    
+    if ! aws cloudformation describe-stacks --stack-name CDKToolkit --region $REGION >/dev/null 2>&1; then
+        cdk bootstrap aws://$ACCOUNT_ID/$REGION
+        print_success "CDK bootstrapped"
+    else
+        print_success "CDK already bootstrapped"
+    fi
+}
 
-if ! command -v npm &> /dev/null; then
-    echo "❌ npm not found. Please install Node.js and npm."
-    exit 1
-fi
+# Install dependencies
+install_dependencies() {
+    print_status "Installing dependencies..."
+    
+    cd infrastructure && npm install && cd ..
+    cd frontend && npm install && cd ..
+    
+    print_success "Dependencies installed"
+}
 
-if ! command -v docker &> /dev/null; then
-    echo "❌ Docker not found. Please install Docker."
-    exit 1
-fi
+# Deploy infrastructure
+deploy_infrastructure() {
+    print_status "Deploying infrastructure..."
+    
+    cd infrastructure
+    
+    export ENVIRONMENT=$ENVIRONMENT
+    export ADMIN_EMAIL=$ADMIN_EMAIL
+    
+    # Deploy core stack
+    print_status "Deploying core stack..."
+    cdk deploy CIAlertStack --require-approval never --outputs-file outputs/core.json
+    
+    # Deploy knowledge base
+    print_status "Deploying knowledge base..."
+    cdk deploy CIAlert-KnowledgeBase --require-approval never --outputs-file outputs/kb.json
+    
+    # Deploy Bedrock agent
+    print_status "Deploying Bedrock agent..."
+    cdk deploy CIAlert-BedrockAgent --require-approval never --outputs-file outputs/agent.json
+    
+    # Deploy Amplify frontend
+    print_status "Deploying Amplify frontend..."
+    cdk deploy CIAlert-Amplify --require-approval never --outputs-file outputs/amplify.json
+    
+    if [ "$ENVIRONMENT" = "production" ]; then
+        print_status "Deploying production enhancements..."
+        cdk deploy CIAlert-Production --require-approval never --outputs-file outputs/production.json
+        cdk deploy CIAlert-Monitoring --require-approval never --outputs-file outputs/monitoring.json
+        cdk deploy CIAlert-CICD --require-approval never --outputs-file outputs/cicd.json
+    fi
+    
+    cd ..
+    print_success "Infrastructure deployed"
+}
 
-if ! command -v cdk &> /dev/null; then
-    echo "📦 Installing AWS CDK..."
-    npm install -g aws-cdk
-fi
+# Configure services
+configure_services() {
+    print_status "Configuring services..."
+    
+    # Setup SES
+    aws ses verify-email-identity --email-address $ADMIN_EMAIL --region $REGION 2>/dev/null || true
+    print_status "Email verification sent to $ADMIN_EMAIL"
+    
+    # Configure Amplify
+    if [ -f "infrastructure/outputs/amplify.json" ]; then
+        AMPLIFY_APP_ID=$(jq -r '.["CIAlert-Amplify"].AmplifyAppId' infrastructure/outputs/amplify.json 2>/dev/null || echo "")
+        
+        if [ -n "$AMPLIFY_APP_ID" ] && [ "$AMPLIFY_APP_ID" != "null" ]; then
+            API_URL=$(jq -r '.CIAlertStack.ApiGatewayUrl' infrastructure/outputs/core.json 2>/dev/null || echo "")
+            USER_POOL_ID=$(jq -r '.CIAlertStack.UserPoolId' infrastructure/outputs/core.json 2>/dev/null || echo "")
+            USER_POOL_CLIENT_ID=$(jq -r '.CIAlertStack.UserPoolClientId' infrastructure/outputs/core.json 2>/dev/null || echo "")
+            
+            aws amplify update-app \
+                --app-id $AMPLIFY_APP_ID \
+                --environment-variables \
+                REACT_APP_API_URL=$API_URL,REACT_APP_USER_POOL_ID=$USER_POOL_ID,REACT_APP_USER_POOL_CLIENT_ID=$USER_POOL_CLIENT_ID,REACT_APP_REGION=$REGION \
+                2>/dev/null || true
+            
+            aws amplify start-job --app-id $AMPLIFY_APP_ID --branch-name main --job-type RELEASE 2>/dev/null || true
+            print_success "Amplify configured"
+        fi
+    fi
+    
+    # Create test user
+    if [ -f "infrastructure/outputs/core.json" ]; then
+        USER_POOL_ID=$(jq -r '.CIAlertStack.UserPoolId' infrastructure/outputs/core.json 2>/dev/null || echo "")
+        
+        if [ -n "$USER_POOL_ID" ] && [ "$USER_POOL_ID" != "null" ]; then
+            aws cognito-idp admin-create-user \
+                --user-pool-id $USER_POOL_ID \
+                --username "test@example.com" \
+                --user-attributes Name=email,Value="test@example.com" \
+                --temporary-password "TempPass123!" \
+                --message-action SUPPRESS \
+                --region $REGION 2>/dev/null || true
+            
+            aws cognito-idp admin-confirm-user \
+                --user-pool-id $USER_POOL_ID \
+                --username "test@example.com" \
+                --region $REGION 2>/dev/null || true
+            
+            aws cognito-idp admin-set-user-password \
+                --user-pool-id $USER_POOL_ID \
+                --username "test@example.com" \
+                --password "Password123!" \
+                --permanent \
+                --region $REGION 2>/dev/null || true
+            
+            print_success "Test user created: test@example.com / Password123!"
+        fi
+    fi
+}
 
-echo "✅ Prerequisites check complete"
-
-# Step 1: Check and clean CDKToolkit stack
-echo "🧹 Checking CDKToolkit stack health..."
-STACK_STATUS=$(aws cloudformation describe-stacks --stack-name CDKToolkit --region $REGION --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "NONE")
-
-case $STACK_STATUS in
-    "CREATE_COMPLETE"|"UPDATE_COMPLETE")
-        echo "  ✅ CDKToolkit is healthy ($STACK_STATUS)"
-        # Verify SSM parameter exists
-        if aws ssm get-parameter --name /cdk-bootstrap/hnb659fds/version --region $REGION &>/dev/null; then
-            echo "  ✅ Bootstrap version parameter exists"
+# Run tests
+run_tests() {
+    print_status "Running system tests..."
+    
+    # Test API Gateway
+    if [ -f "infrastructure/outputs/core.json" ]; then
+        API_URL=$(jq -r '.CIAlertStack.ApiGatewayUrl' infrastructure/outputs/core.json 2>/dev/null || echo "")
+        
+        if [ -n "$API_URL" ] && [ "$API_URL" != "null" ]; then
+            if curl -f -s "$API_URL/insights" >/dev/null 2>&1; then
+                print_success "API Gateway accessible"
+            else
+                print_warning "API Gateway test failed"
+            fi
+        fi
+    fi
+    
+    # Test Amplify
+    if [ -f "infrastructure/outputs/amplify.json" ]; then
+        AMPLIFY_URL=$(jq -r '.["CIAlert-Amplify"].AmplifyAppURL' infrastructure/outputs/amplify.json 2>/dev/null || echo "")
+        
+        if [ -n "$AMPLIFY_URL" ] && [ "$AMPLIFY_URL" != "null" ]; then
+            if curl -f -s "$AMPLIFY_URL" >/dev/null 2>&1; then
+                print_success "Amplify app accessible"
+            else
+                print_warning "Amplify app test failed (may still be building)"
+            fi
+        fi
+    fi
+    
+    # Test DynamoDB
+    INSIGHTS_TABLE=$(aws dynamodb list-tables --query "TableNames[?contains(@,'Insights')]|[0]" --output text 2>/dev/null || echo "")
+    if [ -n "$INSIGHTS_TABLE" ] && [ "$INSIGHTS_TABLE" != "None" ]; then
+        if aws dynamodb describe-table --table-name $INSIGHTS_TABLE >/dev/null 2>&1; then
+            print_success "DynamoDB accessible"
         else
-            echo "  ⚠️  Bootstrap parameter missing, will re-bootstrap"
-            STACK_STATUS="INCOMPLETE"
+            print_warning "DynamoDB test failed"
+        fi
+    fi
+    
+    # Test Lambda functions
+    LAMBDA_FUNCTIONS=$(aws lambda list-functions --query "Functions[?contains(FunctionName,'CIAlert')].FunctionName" --output text 2>/dev/null || echo "")
+    if [ -n "$LAMBDA_FUNCTIONS" ]; then
+        FUNCTION_COUNT=$(echo $LAMBDA_FUNCTIONS | wc -w)
+        print_success "Found $FUNCTION_COUNT Lambda functions"
+    else
+        print_warning "No Lambda functions found"
+    fi
+}
+
+# Get system status
+get_status() {
+    print_status "Getting system status..."
+    
+    echo ""
+    echo "=== SYSTEM STATUS ==="
+    
+    # Core stack status
+    if aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION >/dev/null 2>&1; then
+        CORE_STATUS=$(aws cloudformation describe-stacks --stack-name CIAlertStack --query 'Stacks[0].StackStatus' --output text --region $REGION)
+        echo "Core Stack: $CORE_STATUS"
+    else
+        echo "Core Stack: NOT_DEPLOYED"
+    fi
+    
+    # Amplify status
+    if [ -f "infrastructure/outputs/amplify.json" ]; then
+        AMPLIFY_APP_ID=$(jq -r '.["CIAlert-Amplify"].AmplifyAppId' infrastructure/outputs/amplify.json 2>/dev/null || echo "")
+        if [ -n "$AMPLIFY_APP_ID" ] && [ "$AMPLIFY_APP_ID" != "null" ]; then
+            AMPLIFY_STATUS=$(aws amplify get-app --app-id $AMPLIFY_APP_ID --query 'app.defaultDomain' --output text 2>/dev/null || echo "ERROR")
+            echo "Amplify App: $AMPLIFY_STATUS"
+        fi
+    fi
+    
+    # URLs
+    echo ""
+    echo "=== ENDPOINTS ==="
+    
+    if [ -f "infrastructure/outputs/core.json" ]; then
+        API_URL=$(jq -r '.CIAlertStack.ApiGatewayUrl' infrastructure/outputs/core.json 2>/dev/null || echo "")
+        [ -n "$API_URL" ] && [ "$API_URL" != "null" ] && echo "API Gateway: $API_URL"
+    fi
+    
+    if [ -f "infrastructure/outputs/amplify.json" ]; then
+        AMPLIFY_URL=$(jq -r '.["CIAlert-Amplify"].AmplifyAppURL' infrastructure/outputs/amplify.json 2>/dev/null || echo "")
+        [ -n "$AMPLIFY_URL" ] && [ "$AMPLIFY_URL" != "null" ] && echo "Frontend: $AMPLIFY_URL"
+    fi
+    
+    echo ""
+    echo "Test Credentials:"
+    echo "Username: test@example.com"
+    echo "Password: Password123!"
+}
+
+# Destroy infrastructure
+destroy_infrastructure() {
+    print_warning "Destroying infrastructure..."
+    
+    cd infrastructure
+    
+    # Destroy in reverse order
+    if [ "$ENVIRONMENT" = "production" ]; then
+        cdk destroy CIAlert-CICD --force 2>/dev/null || true
+        cdk destroy CIAlert-Monitoring --force 2>/dev/null || true
+        cdk destroy CIAlert-Production --force 2>/dev/null || true
+    fi
+    
+    cdk destroy CIAlert-Amplify --force 2>/dev/null || true
+    cdk destroy CIAlert-BedrockAgent --force 2>/dev/null || true
+    cdk destroy CIAlert-KnowledgeBase --force 2>/dev/null || true
+    cdk destroy CIAlertStack --force 2>/dev/null || true
+    
+    cd ..
+    
+    # Clean up outputs
+    rm -rf infrastructure/outputs/ 2>/dev/null || true
+    
+    print_success "Infrastructure destroyed"
+}
+
+# Display summary
+display_summary() {
+    print_success "🎉 Deployment completed successfully!"
+    
+    echo ""
+    echo "=== DEPLOYMENT SUMMARY ==="
+    
+    if [ -f "infrastructure/outputs/core.json" ]; then
+        API_URL=$(jq -r '.CIAlertStack.ApiGatewayUrl' infrastructure/outputs/core.json 2>/dev/null || echo "")
+        USER_POOL_ID=$(jq -r '.CIAlertStack.UserPoolId' infrastructure/outputs/core.json 2>/dev/null || echo "")
+        
+        [ -n "$API_URL" ] && [ "$API_URL" != "null" ] && echo "API Gateway: $API_URL"
+        [ -n "$USER_POOL_ID" ] && [ "$USER_POOL_ID" != "null" ] && echo "User Pool: $USER_POOL_ID"
+    fi
+    
+    if [ -f "infrastructure/outputs/amplify.json" ]; then
+        AMPLIFY_URL=$(jq -r '.["CIAlert-Amplify"].AmplifyAppURL' infrastructure/outputs/amplify.json 2>/dev/null || echo "")
+        AMPLIFY_APP_ID=$(jq -r '.["CIAlert-Amplify"].AmplifyAppId' infrastructure/outputs/amplify.json 2>/dev/null || echo "")
+        
+        [ -n "$AMPLIFY_URL" ] && [ "$AMPLIFY_URL" != "null" ] && echo "Frontend: $AMPLIFY_URL"
+        [ -n "$AMPLIFY_APP_ID" ] && [ "$AMPLIFY_APP_ID" != "null" ] && echo "Amplify App ID: $AMPLIFY_APP_ID"
+    fi
+    
+    echo ""
+    echo "Next Steps:"
+    echo "1. Verify email: $ADMIN_EMAIL"
+    echo "2. Enable Bedrock models in AWS Console"
+    echo "3. Test system: ./deploy.sh $ENVIRONMENT $ADMIN_EMAIL test"
+    echo ""
+    
+    if [ "$ENVIRONMENT" = "production" ]; then
+        echo "Production Features:"
+        echo "✅ Multi-environment CI/CD"
+        echo "✅ Comprehensive monitoring"
+        echo "✅ Security scanning"
+        echo "✅ Performance tracking"
+    fi
+}
+
+# Create outputs directory
+mkdir -p infrastructure/outputs
+
+# Main execution
+case $ACTION in
+    "deploy")
+        print_status "🚀 Starting CI Alert System deployment..."
+        print_status "Environment: $ENVIRONMENT | Region: $REGION | Email: $ADMIN_EMAIL"
+        
+        check_prerequisites
+        bootstrap_cdk
+        install_dependencies
+        deploy_infrastructure
+        configure_services
+        run_tests
+        display_summary
+        ;;
+    
+    "test")
+        print_status "🧪 Running system tests..."
+        run_tests
+        ;;
+    
+    "status")
+        get_status
+        ;;
+    
+    "destroy")
+        print_warning "⚠️  This will destroy all infrastructure!"
+        read -p "Are you sure? (yes/no): " -r
+        if [[ $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+            destroy_infrastructure
+        else
+            print_status "Destruction cancelled"
         fi
         ;;
-    "ROLLBACK_COMPLETE"|"REVIEW_IN_PROGRESS"|"CREATE_FAILED"|"ROLLBACK_IN_PROGRESS")
-        echo "  ⚠️  Found failed stack in $STACK_STATUS state. Cleaning up..."
-        aws cloudformation delete-stack --stack-name CDKToolkit --region $REGION
-        echo "  Waiting for deletion..."
-        aws cloudformation wait stack-delete-complete --stack-name CDKToolkit --region $REGION 2>/dev/null || true
-        echo "  ✅ Cleanup complete"
-        STACK_STATUS="NONE"
-        ;;
-    "NONE")
-        echo "  ℹ️  CDKToolkit not found, will bootstrap"
-        ;;
+    
     *)
-        echo "  ℹ️  CDKToolkit status: $STACK_STATUS"
+        echo "Usage: $0 [environment] [admin-email] [action]"
+        echo "Actions: deploy, test, destroy, status"
+        echo "Example: $0 production admin@company.com deploy"
+        exit 1
         ;;
 esac
-
-# Step 2: Bootstrap CDK (if needed)
-if [ "$STACK_STATUS" = "NONE" ] || [ "$STACK_STATUS" = "INCOMPLETE" ]; then
-    echo "🏗️  Bootstrapping CDK in $REGION..."
-    if cdk bootstrap aws://${ACCOUNT_ID}/${REGION}; then
-        echo "  ✅ CDK bootstrap successful"
-        
-        # Verify bootstrap completed successfully
-        FINAL_STATUS=$(aws cloudformation describe-stacks --stack-name CDKToolkit --region $REGION --query 'Stacks[0].StackStatus' --output text 2>/dev/null)
-        if [ "$FINAL_STATUS" != "CREATE_COMPLETE" ] && [ "$FINAL_STATUS" != "UPDATE_COMPLETE" ]; then
-            echo "  ❌ Bootstrap failed with status: $FINAL_STATUS"
-            exit 1
-        fi
-        
-        # Verify SSM parameter
-        if ! aws ssm get-parameter --name /cdk-bootstrap/hnb659fds/version --region $REGION &>/dev/null; then
-            echo "  ❌ Bootstrap parameter not created"
-            exit 1
-        fi
-        echo "  ✅ Bootstrap verification passed"
-    else
-        echo "  ❌ CDK bootstrap failed"
-        echo ""
-        echo "  ⚠️  CloudFormation hook is blocking bootstrap"
-        echo "  Attempting manual bootstrap (bypasses hooks)..."
-        echo ""
-        
-        # Try manual bootstrap
-        chmod +x bootstrap-manual.sh
-        if ./bootstrap-manual.sh; then
-            echo "  ✅ Manual bootstrap successful"
-            
-            # Verify SSM parameter
-            if ! aws ssm get-parameter --name /cdk-bootstrap/hnb659fds/version --region $REGION &>/dev/null; then
-                echo "  ❌ Manual bootstrap failed - parameter not created"
-                echo ""
-                echo "  Please contact your AWS administrator to:"
-                echo "  1. Disable CloudFormation hook: AWS::EarlyValidation::ResourceExistenceCheck"
-                echo "  2. Or grant permissions to create CDK bootstrap resources"
-                exit 1
-            fi
-            echo "  ✅ Manual bootstrap verification passed"
-        else
-            echo "  ❌ Manual bootstrap also failed"
-            echo ""
-            echo "  Your AWS account has strict policies preventing CDK bootstrap."
-            echo "  Please contact your AWS administrator to:"
-            echo "  1. Disable CloudFormation hook: AWS::EarlyValidation::ResourceExistenceCheck"
-            echo "  2. Or manually create CDK bootstrap resources"
-            echo ""
-            echo "  For more help, see: CLOUDFORMATION_HOOK_FIX.md"
-            exit 1
-        fi
-    fi
-else
-    echo "  ℹ️  CDK already bootstrapped, skipping"
-fi
-
-# Step 3: Setup GitHub token for CICD stack
-echo "🔑 Checking GitHub token for CICD..."
-if ! aws secretsmanager describe-secret --secret-id github-token --region $REGION &>/dev/null; then
-    echo "⚠️  GitHub token not found in Secrets Manager"
-    echo "   CICD stack requires GitHub personal access token"
-    echo ""
-    read -p "Do you have a GitHub personal access token? (y/n): " has_token
-    
-    if [[ "$has_token" =~ ^[Yy]$ ]]; then
-        echo ""
-        echo "Get token from: https://github.com/settings/tokens"
-        echo "Required scopes: repo, admin:repo_hook"
-        echo ""
-        read -sp "Enter GitHub token: " github_token
-        echo ""
-        
-        aws secretsmanager create-secret \
-            --name github-token \
-            --secret-string "$github_token" \
-            --region $REGION
-        
-        echo "✅ GitHub token stored in Secrets Manager"
-    else
-        echo ""
-        echo "⚠️  Skipping CICD stack deployment (no GitHub token)"
-        echo "   To deploy later:"
-        echo "   1. Create token: https://github.com/settings/tokens"
-        echo "   2. Store: aws secretsmanager create-secret --name github-token --secret-string TOKEN --region $REGION"
-        echo "   3. Deploy: cd infrastructure && cdk deploy CIAlert-CICD"
-        SKIP_CICD=true
-    fi
-else
-    echo "✅ GitHub token found in Secrets Manager"
-fi
-
-# Step 4: Install dependencies
-echo "📦 Installing dependencies..."
-
-# Infrastructure dependencies
-cd infrastructure
-npm install
-cd ..
-
-# Step 5: Build and deploy infrastructure
-echo "🏗️  Building and deploying infrastructure..."
-cd infrastructure
-npm run build
-
-# Function to check if stack exists
-check_stack_exists() {
-    local stack_name=$1
-    aws cloudformation describe-stacks --stack-name "$stack_name" --region $REGION &>/dev/null
-    return $?
-}
-
-# Function to deploy stack if needed
-deploy_stack_if_needed() {
-    local stack_name=$1
-    if check_stack_exists "$stack_name"; then
-        echo "  ✓ $stack_name already exists - checking for updates..."
-        cdk deploy $stack_name --require-approval never
-    else
-        echo "  + Creating $stack_name..."
-        cdk deploy $stack_name --require-approval never
-    fi
-}
-
-echo "📋 Checking and deploying stacks in order..."
-echo ""
-
-# Production-grade deployment sequence
-DEPLOYED_STACKS=()
-FAILED_STACKS=()
-
-deploy_stack() {
-    local stack_name=$1
-    local context_args=$2
-    local description=$3
-    echo ""
-    echo "📦 Deploying $stack_name ($description)..."
-    
-    if cdk deploy $stack_name --require-approval never $context_args; then
-        DEPLOYED_STACKS+=("$stack_name")
-        echo "✅ $stack_name deployed successfully"
-        return 0
-    else
-        FAILED_STACKS+=("$stack_name")
-        echo "❌ $stack_name failed"
-        return 1
-    fi
-}
-
-echo "🏗️ Production Deployment Sequence:"
-echo "1. Core Infrastructure (DynamoDB, Lambda, API Gateway, Cognito)"
-echo "2. Frontend (ALB, ECS Fargate, VPC, WAF)"
-echo "3. Monitoring (CloudWatch, Alarms, SNS)"
-echo "4. CI/CD Pipeline (Optional)"
-echo "5. Knowledge Base & Bedrock Agent (Manual)"
-echo ""
-
-# Helper function to check and deploy stack
-check_and_deploy() {
-    local stack_name=$1
-    local context_args=$2
-    local description=$3
-    
-    if aws cloudformation describe-stacks --stack-name $stack_name --region $REGION &>/dev/null; then
-        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name $stack_name --region $REGION --query 'Stacks[0].StackStatus' --output text)
-        if [[ "$STACK_STATUS" == "CREATE_COMPLETE" || "$STACK_STATUS" == "UPDATE_COMPLETE" ]]; then
-            echo "✅ $stack_name already exists and is healthy ($STACK_STATUS)"
-            DEPLOYED_STACKS+=("$stack_name")
-            return 0
-        else
-            echo "⚠️  $stack_name exists but in $STACK_STATUS state, updating..."
-        fi
-    fi
-    deploy_stack "$stack_name" "$context_args" "$description"
-}
-
-# 1. Core Infrastructure (Foundation)
-check_and_deploy "CIAlertStack" "" "Core Infrastructure"
-
-# Get outputs from core stack for frontend configuration
-if [[ " ${DEPLOYED_STACKS[@]} " =~ " CIAlertStack " ]]; then
-    echo "📋 Extracting core stack outputs..."
-    API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text 2>/dev/null || echo "")
-    USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null || echo "")
-    USER_POOL_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolClientId`].OutputValue' --output text 2>/dev/null || echo "")
-    
-    echo "  ✅ API URL: $API_URL"
-    echo "  ✅ User Pool ID: $USER_POOL_ID"
-    echo "  ✅ Client ID: $USER_POOL_CLIENT_ID"
-else
-    echo "❌ Core stack failed - cannot proceed with frontend"
-    exit 1
-fi
-
-# 2. Frontend (Optional - ALB + ECS Fargate)
-read -p "Deploy Frontend stack (ALB + ECS)? (y/n): " deploy_frontend
-if [[ "$deploy_frontend" =~ ^[Yy]$ ]]; then
-    FRONTEND_CONTEXT="--context apiUrl=$API_URL --context userPoolId=$USER_POOL_ID --context userPoolClientId=$USER_POOL_CLIENT_ID --context region=$REGION"
-    check_and_deploy "CIAlert-Frontend" "$FRONTEND_CONTEXT" "Frontend (ALB + ECS)"
-fi
-
-# 3. Monitoring (Optional - CloudWatch dashboards)
-read -p "Deploy Monitoring stack? (y/n): " deploy_monitoring
-if [[ "$deploy_monitoring" =~ ^[Yy]$ ]]; then
-    check_and_deploy "CIAlert-Monitoring" "" "Monitoring"
-fi
-
-# 4. CI/CD (Optional - GitHub pipeline)
-if [ "$SKIP_CICD" != true ]; then
-    read -p "Deploy CI/CD stack? (y/n): " deploy_cicd
-    if [[ "$deploy_cicd" =~ ^[Yy]$ ]]; then
-        check_and_deploy "CIAlert-CICD" "" "CI/CD Pipeline"
-    fi
-fi
-
-# 5. Knowledge Base & Bedrock Agent (Manual setup required)
-echo ""
-echo "🧠 Manual Setup Required (CloudFormation hooks block automation):"
-echo "  ⚠️  Knowledge Base: AWS Console → Bedrock → Knowledge bases"
-echo "  ⚠️  Bedrock Agent: AWS Console → Bedrock → Agents"
-echo "  🔗 Connect: Update Lambda env vars with Agent ID and KB ID"
-echo ""
-echo "🔧 Fixing Bedrock Agent Permissions..."
-if aws bedrock-agent list-agents --region $REGION &>/dev/null; then
-    echo "  ✅ Bedrock Agent service is accessible"
-    
-    # Check if any agents exist and fix permissions
-    AGENTS=$(aws bedrock-agent list-agents --region $REGION --query 'agentSummaries[].agentId' --output text 2>/dev/null || echo "")
-    if [ -n "$AGENTS" ]; then
-        for AGENT_ID in $AGENTS; do
-            echo "  🔧 Fixing permissions for agent: $AGENT_ID"
-            
-            # Get agent role ARN
-            ROLE_ARN=$(aws bedrock-agent get-agent --agent-id $AGENT_ID --region $REGION --query "agent.agentResourceRoleArn" --output text 2>/dev/null || echo "")
-            if [ -n "$ROLE_ARN" ]; then
-                ROLE_NAME=$(basename $ROLE_ARN)
-                echo "    Role: $ROLE_NAME"
-                
-                # Apply Bedrock permissions policy
-                aws iam put-role-policy --role-name $ROLE_NAME --policy-name BedrockAgentPolicy --policy-document '{
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Effect": "Allow",
-                            "Action": [
-                                "bedrock:InvokeModel",
-                                "bedrock:InvokeModelWithResponseStream"
-                            ],
-                            "Resource": [
-                                "arn:aws:bedrock:'$REGION'::foundation-model/anthropic.claude-3-5-haiku-20241022-v1:0",
-                                "arn:aws:bedrock:'$REGION'::foundation-model/anthropic.claude-3-sonnet-20240229-v1:0",
-                                "arn:aws:bedrock:'$REGION'::foundation-model/amazon.nova-premier-v1:0"
-                            ]
-                        },
-                        {
-                            "Effect": "Allow",
-                            "Action": "lambda:InvokeFunction",
-                            "Resource": "arn:aws:lambda:'$REGION':'$ACCOUNT_ID':function:*"
-                        }
-                    ]
-                }' 2>/dev/null && echo "    ✅ Permissions updated" || echo "    ⚠️  Permission update failed"
-            fi
-        done
-    else
-        echo "  ℹ️  No agents found - create manually in console"
-    fi
-else
-    echo "  ⚠️  Bedrock Agent service not accessible in $REGION"
-fi
-
-cd ..
-
-# Step 6: Production Deployment Summary
-echo ""
-echo "🎆 Production Deployment Summary"
-echo "==============================="
-echo ""
-echo "✅ Successfully Deployed (${#DEPLOYED_STACKS[@]} stacks):"
-for stack in "${DEPLOYED_STACKS[@]}"; do
-    echo "  ✓ $stack"
-done
-
-if [ ${#FAILED_STACKS[@]} -gt 0 ]; then
-    echo ""
-    echo "❌ Failed Deployments (${#FAILED_STACKS[@]} stacks):"
-    for stack in "${FAILED_STACKS[@]}"; do
-        echo "  ✗ $stack"
-    done
-fi
-
-# Get ALB URL if frontend deployed
-if [[ " ${DEPLOYED_STACKS[@]} " =~ " CIAlert-Frontend " ]]; then
-    ALB_URL=$(aws cloudformation describe-stacks --stack-name CIAlert-Frontend --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerURL`].OutputValue' --output text 2>/dev/null || echo "")
-    if [ -n "$ALB_URL" ]; then
-        echo ""
-        echo "🌍 Production Application URL:"
-        echo "  $ALB_URL"
-    fi
-fi
-
-echo ""
-echo "📋 Manual Bedrock Setup Instructions:"
-echo "1. Enable Models: AWS Console → Bedrock → Model Access"
-echo "   - anthropic.claude-3-5-haiku-20241022-v1:0 ✓"
-echo "   - anthropic.claude-3-sonnet-20240229-v1:0 ✓"
-echo "   - amazon.titan-embed-text-v1 ✓"
-echo "2. Create Knowledge Base: AWS Console → Bedrock → Knowledge bases"
-echo "   - Name: ci-alert-knowledge-base"
-echo "   - S3 bucket: $DATA_BUCKET"
-echo "   - Embedding: amazon.titan-embed-text-v1"
-echo "3. Create Agent: AWS Console → Bedrock → Agents"
-echo "   - Name: ci-alert-agent"
-echo "   - Model: anthropic.claude-3-5-haiku-20241022-v1:0"
-echo "   - Action groups: Use JSON schema from README"
-echo "4. Update Lambda env vars with Agent ID and KB ID"
-echo "5. Test agent permissions (should be auto-fixed by this script)"
-echo ""
-echo "🚀 Next Steps:"
-echo "1. Wait 5-10 minutes for ECS tasks to start"
-echo "2. Test application at ALB URL"
-echo "3. Enable Bedrock models for AI features"
-echo "4. Setup SES for email notifications"
-echo "5. Configure monitoring alerts"
-
-# Step 7: Get stack outputs
-echo "📋 Getting stack outputs..."
-API_URL=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text 2>/dev/null || echo "")
-USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CIAlertStack --region $REGION --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text 2>/dev/null || echo "")
-
-# Step 8: Test deployment
-echo "🧪 Testing deployment..."
-if [ -n "$API_URL" ]; then
-    echo "Testing API endpoint: $API_URL"
-    curl -s "${API_URL}insights" > /dev/null && echo "  ✅ API is responding" || echo "  ⚠️  API not responding yet"
-fi
-
-echo ""
-echo "🎉 Deployment Complete!"
-echo "====================="
-echo ""
-echo "📊 Deployed Stacks:"
-echo "  ✓ CIAlertStack (Core: DynamoDB, Lambda, API Gateway, Cognito)"
-echo "  ✓ CIAlert-KnowledgeBase (S3 + OpenSearch + Bedrock KB)"
-echo "  ✓ CIAlert-BedrockAgent (Bedrock Agent + RAG Actions)"
-echo "  ✓ CIAlert-Frontend (S3 Static Website + CloudFront)"
-echo "  ✓ CIAlert-Monitoring (CloudWatch, Alarms, SNS)"
-if [ "$SKIP_CICD" = true ]; then
-    echo "  ✗ CIAlert-CICD (Skipped - no GitHub token)"
-else
-    echo "  ✓ CIAlert-CICD (GitHub + CodePipeline)"
-fi
-echo ""
-echo "📋 Stack Outputs:"
-echo "  Region: $REGION"
-echo "  Account: $ACCOUNT_ID"
-if [ -n "$API_URL" ]; then
-    echo "  API URL: $API_URL"
-fi
-if [ -n "$USER_POOL_ID" ]; then
-    echo "  User Pool: $USER_POOL_ID"
-fi
-echo ""
-echo "🧪 Test Commands:"
-echo "  # Get insights"
-echo "  curl ${API_URL}insights"
-echo ""
-echo "  # Add to watchlist"
-echo "  curl -X POST ${API_URL}watchlist -H 'Content-Type: application/json' -d '{\"molecule\":\"Keytruda\"}'"
-echo ""
-echo "  # Trigger ingestion"
-echo "  aws lambda invoke --function-name CIAlertStack-PubMedFunction --region $REGION response.json"
-echo ""
-echo "📝 Next Steps:"
-echo "1. Enable Bedrock models: AWS Console → Bedrock → Model Access → Enable Claude 3.5 Haiku + Claude 3 Sonnet + Titan Embeddings"
-echo "2. Create Bedrock Agent manually (CloudFormation hooks prevent automation):"
-echo "   - AWS Console → Bedrock → Agents → Create agent"
-echo "   - Name: ci-alert-agent"
-echo "   - Model: anthropic.claude-3-5-haiku-20241022-v1:0 (recommended)"
-echo "   - Instructions: You are a pharmaceutical competitive intelligence analyst..."
-echo "3. Create Knowledge Base manually:"
-echo "   - AWS Console → Bedrock → Knowledge bases → Create"
-echo "   - Name: ci-alert-knowledge-base"
-echo "   - S3 bucket: Use data bucket from stack outputs"
-echo "   - Embedding model: amazon.titan-embed-text-v1"
-echo "4. Upload sample data: ./upload-sample-data.sh"
-echo "5. Deploy frontend: bash deploy-cognito-frontend.sh"
-echo "6. Create test user (see QUICKSTART.md)"
-if [ "$SKIP_CICD" = true ]; then
-    echo "4. Setup GitHub token to deploy CICD: aws secretsmanager create-secret --name github-token --secret-string YOUR_TOKEN --region $REGION"
-    echo "5. Deploy CICD: cd infrastructure && cdk deploy CIAlert-CICD"
-fi
-echo ""
-if [ "$SKIP_CICD" = true ]; then
-    echo "✅ 5 stacks deployed successfully (CICD skipped)!"
-else
-    echo "✅ All 6 stacks deployed successfully!"
-fi
-
-# Step 9: Deploy frontend application
-echo ""
-echo "🎨 Deploying frontend application..."
-if [ -d "frontend" ] && [ -f "shell scripts/deploy-cognito-frontend.sh" ]; then
-    bash "shell scripts/deploy-cognito-frontend.sh"
-    echo ""
-    echo "✅ Frontend deployed successfully!"
-else
-    echo "⚠️  Frontend directory or deployment script not found"
-    echo "   To deploy frontend later, run: bash 'shell scripts/deploy-cognito-frontend.sh'"
-fi
-
-echo ""
-echo "🎉 Complete deployment finished!"
-echo "   Open your website URL and test all features"

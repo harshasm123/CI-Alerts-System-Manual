@@ -6,20 +6,19 @@ Enterprise-grade AWS system for pharmaceutical competitive intelligence with RAG
 Production Deployment
 ====================
 
-Option 1: Production-Grade (Recommended)
-# Deploy with comprehensive monitoring, security, and CI/CD
-chmod +x scripts/production-deploy.sh
-./scripts/production-deploy.sh production admin@yourcompany.com
+Single Command Deployment:
+# Complete system deployment
+./deploy.sh production admin@yourcompany.com deploy
 
-Option 2: Quick Deploy (Basic)
-# Basic deployment without production enhancements
-bash deploy.sh
-bash "shell scripts/setup-ses.sh"
-bash "shell scripts/deploy-amplify-frontend.sh"
+Other Commands:
+# Test system
+./deploy.sh production admin@yourcompany.com test
 
-Option 3: Development
-# Deploy to development environment
-./scripts/production-deploy.sh development dev@yourcompany.com
+# Check status
+./deploy.sh production admin@yourcompany.com status
+
+# Destroy system
+./deploy.sh production admin@yourcompany.com destroy
 
 See QUICKSTART.md for detailed instructions.
 
@@ -403,50 +402,22 @@ Quick Start
 ===========
 
 Prerequisites:
-# Install Node.js 20+, AWS CLI, Docker
+# Install all required tools
 bash prereq.sh
 
 # Configure AWS
 aws configure
 
-Production Deployment (Recommended):
-# Deploy with Amplify, auto-scaling, WAF, HTTPS
-bash deploy-production.sh
-
-Features:
-- ✅ Application Load Balancer with health checks
-- ✅ AWS Amplify with serverless frontend hosting
-- ✅ WAF with security rules and rate limiting
-- ✅ CloudFront with global edge locations
-- ✅ HTTPS support with custom domains
-- ✅ Performance monitoring and analytics
-
-Basic Deployment:
-# 1. Deploy infrastructure
-bash deploy.sh
-
-# 2. Setup email notifications
-bash "shell scripts/setup-ses.sh"
-
-# 3. Deploy Amplify frontend
-bash "shell scripts/deploy-amplify-frontend.sh"
-
-Enable Bedrock Models:
-# AWS Console → Bedrock → Model Access → Enable:
-# - anthropic.claude-3-5-sonnet-20250106-v1:0
-# - anthropic.claude-3-5-haiku-20241022
-# - amazon.titan-embed-text-v1
+Complete Deployment:
+# Deploy entire system with one command
+./deploy.sh production admin@yourcompany.com deploy
 
 Testing:
 # Test system
-bash "shell scripts/test.sh" system
+./deploy.sh production admin@yourcompany.com test
 
-# Test individual components
-bash "shell scripts/test.sh" api
-bash "shell scripts/test.sh" cognito
-
-# Trigger ingestion
-bash trigger-ingestion.sh
+# Check status
+./deploy.sh production admin@yourcompany.com status
 
 Support & Maintenance
 ====================

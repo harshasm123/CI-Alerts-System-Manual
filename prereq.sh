@@ -1,149 +1,170 @@
 #!/bin/bash
 
-# Prerequisites Setup Script for CI Alert System
+# Prerequisites Installation Script for CI Alert System
+# Installs Node.js, AWS CLI, CDK, and other required tools
+
 set -e
 
-echo "🔧 Setting up prerequisites for CI Alert System..."
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-# Check OS
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-    echo "❌ Windows detected. Please use WSL or Linux/macOS"
-    exit 1
-fi
+print_status() { echo -e "${BLUE}[INFO]${NC} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 
-# Set non-interactive mode for apt
-export DEBIAN_FRONTEND=noninteractive
+print_status "🔧 Installing CI Alert System Prerequisites"
 
-# Wait for any running apt processes to complete
-echo "⏳ Waiting for package manager to be available..."
-sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && echo "Waiting for other package managers to finish..." && sleep 60
-sudo pkill -f apt >/dev/null 2>&1 || true
-sleep 10
-
-# Install unzip if not present
-if ! command -v unzip &> /dev/null; then
-    echo "📦 Installing unzip..."
-    sudo apt-get update
-    sudo apt-get install -y unzip
-fi
-
-# Install AWS CLI v2
-if ! command -v aws &> /dev/null; then
-    echo "📦 Installing AWS CLI v2..."
-    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-    unzip awscliv2.zip
-    sudo ./aws/install
-    rm -rf aws awscliv2.zip
-fi
-
-# Install Node.js 20 LTS (avoid deprecation warnings)
-if ! command -v node &> /dev/null || [[ $(node -v | cut -d'.' -f1 | cut -d'v' -f2) -lt 20 ]]; then
-    echo "📦 Installing Node.js 20 LTS..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
-fi
-
-# Install Python 3 (use system default)
-if ! command -v python3 &> /dev/null; then
-    echo "📦 Installing Python 3..."
-    sudo apt-get update
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv
+# Detect OS
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    OS="linux"
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+    OS="macos"
+elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]]; then
+    OS="windows"
 else
-    echo "✓ Python 3 already installed: $(python3 --version)"
+    print_warning "Unknown OS: $OSTYPE"
+    OS="linux"
 fi
 
-# Install Docker
-if ! command -v docker &> /dev/null; then
-    echo "📦 Installing Docker..."
-    curl -fsSL https://get.docker.com -o get-docker.sh
-    sudo sh get-docker.sh
-    sudo usermod -aG docker $USER
-    sudo systemctl start docker
-    sudo systemctl enable docker
-    sudo chmod 666 /var/run/docker.sock
-    rm get-docker.sh
-    echo "✅ Docker installed"
-else
-    echo "✓ Docker already installed"
-    # Fix permissions if Docker exists but has permission issues
-    if ! docker ps &>/dev/null; then
-        echo "🔧 Fixing Docker permissions..."
-        sudo usermod -aG docker $USER
-        sudo systemctl start docker
-        sudo chmod 666 /var/run/docker.sock
+print_status "Detected OS: $OS"
+
+# Install Node.js
+install_nodejs() {
+    if command -v node >/dev/null 2>&1; then
+        NODE_VERSION=$(node --version)
+        print_success "Node.js already installed: $NODE_VERSION"
+    else
+        print_status "Installing Node.js..."
+        
+        if [ "$OS" = "linux" ]; then
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+        elif [ "$OS" = "macos" ]; then
+            if command -v brew >/dev/null 2>&1; then
+                brew install node
+            else
+                print_warning "Please install Homebrew first or download Node.js from nodejs.org"
+                return 1
+            fi
+        elif [ "$OS" = "windows" ]; then
+            print_warning "Please download Node.js from https://nodejs.org/"
+            return 1
+        fi
+        
+        print_success "Node.js installed"
     fi
-fi
+}
+
+# Install AWS CLI
+install_aws_cli() {
+    if command -v aws >/dev/null 2>&1; then
+        AWS_VERSION=$(aws --version)
+        print_success "AWS CLI already installed: $AWS_VERSION"
+    else
+        print_status "Installing AWS CLI..."
+        
+        if [ "$OS" = "linux" ]; then
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
+            rm -rf awscliv2.zip aws/
+        elif [ "$OS" = "macos" ]; then
+            curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg"
+            sudo installer -pkg AWSCLIV2.pkg -target /
+            rm AWSCLIV2.pkg
+        elif [ "$OS" = "windows" ]; then
+            print_warning "Please download AWS CLI from https://aws.amazon.com/cli/"
+            return 1
+        fi
+        
+        print_success "AWS CLI installed"
+    fi
+}
 
 # Install AWS CDK
-if ! command -v cdk &> /dev/null; then
-    echo "📦 Installing AWS CDK..."
-    sudo npm install -g aws-cdk
-fi
-
-# Configure AWS CLI
-echo "🔐 Configuring AWS CLI..."
-if [ ! -f ~/.aws/credentials ]; then
-    echo "Please enter your AWS credentials:"
-    aws configure
-else
-    echo "AWS credentials already configured. Reconfigure? (y/N)"
-    read -r response
-    if [[ "$response" =~ ^[Yy]$ ]]; then
-        aws configure
-    fi
-fi
-
-# Check and fix region for CloudFormation hook issues
-CURRENT_REGION=$(aws configure get region)
-echo "🌍 Current region: $CURRENT_REGION"
-
-PROBLEMATIC_REGIONS=("us-west-2")
-for region in "${PROBLEMATIC_REGIONS[@]}"; do
-    if [ "$CURRENT_REGION" = "$region" ]; then
-        echo "⚠️  $region has CloudFormation hooks blocking CDK"
-        aws configure set region us-east-1
-        echo "✅ Switched to us-east-1"
-        break
-    fi
-done
-
-# Verify AWS access
-echo "🔍 Verifying AWS access..."
-if aws sts get-caller-identity &>/dev/null; then
-    echo "✅ AWS credentials valid"
-    aws sts get-caller-identity
-else
-    echo "❌ AWS credentials invalid or not configured"
-    echo "   Please reconfigure your credentials:"
-    echo ""
-    aws configure
-    echo ""
-    echo "Verifying again..."
-    if aws sts get-caller-identity; then
-        echo "✅ AWS credentials now valid"
+install_cdk() {
+    if command -v cdk >/dev/null 2>&1; then
+        CDK_VERSION=$(cdk --version)
+        print_success "AWS CDK already installed: $CDK_VERSION"
     else
-        echo "❌ Still invalid. Check your Access Key ID and Secret Access Key"
-        exit 1
+        print_status "Installing AWS CDK..."
+        npm install -g aws-cdk
+        print_success "AWS CDK installed"
     fi
-fi
+}
 
-echo "⚠️  IMPORTANT: Enable Bedrock models manually"
-echo "   1. Go to AWS Console > Bedrock > Model Access"
-echo "   2. Request access to: Amazon Nova Premier and Amazon Nova Lite"
-echo "   3. Wait for approval (usually instant for standard models)"
+# Install jq
+install_jq() {
+    if command -v jq >/dev/null 2>&1; then
+        JQ_VERSION=$(jq --version)
+        print_success "jq already installed: $JQ_VERSION"
+    else
+        print_status "Installing jq..."
+        
+        if [ "$OS" = "linux" ]; then
+            sudo apt-get update && sudo apt-get install -y jq
+        elif [ "$OS" = "macos" ]; then
+            if command -v brew >/dev/null 2>&1; then
+                brew install jq
+            else
+                print_warning "Please install Homebrew first"
+                return 1
+            fi
+        elif [ "$OS" = "windows" ]; then
+            print_warning "Please install jq from https://stedolan.github.io/jq/"
+            return 1
+        fi
+        
+        print_success "jq installed"
+    fi
+}
 
-echo "✅ Prerequisites setup complete!"
-echo ""
-echo "🐳 Docker Status:"
-if docker ps &>/dev/null; then
-    echo "  ✅ Docker is working"
-else
-    echo "  ⚠️  Docker needs group refresh"
-    echo "  Run: newgrp docker"
-    echo "  Or logout and login again"
-fi
-echo ""
-echo "Next steps:"
-echo "1. If Docker permission error: logout and login OR run 'newgrp docker'"
-echo "2. Enable Bedrock models: https://console.aws.amazon.com/bedrock/home#/modelaccess"
-echo "3. Run: ./deploy.sh"
+# Install Docker (optional)
+install_docker() {
+    if command -v docker >/dev/null 2>&1; then
+        DOCKER_VERSION=$(docker --version)
+        print_success "Docker already installed: $DOCKER_VERSION"
+    else
+        print_status "Installing Docker..."
+        
+        if [ "$OS" = "linux" ]; then
+            curl -fsSL https://get.docker.com -o get-docker.sh
+            sudo sh get-docker.sh
+            sudo usermod -aG docker $USER
+            rm get-docker.sh
+            print_warning "Please log out and back in to use Docker without sudo"
+        elif [ "$OS" = "macos" ]; then
+            print_warning "Please download Docker Desktop from https://www.docker.com/products/docker-desktop"
+        elif [ "$OS" = "windows" ]; then
+            print_warning "Please download Docker Desktop from https://www.docker.com/products/docker-desktop"
+        fi
+        
+        print_success "Docker installation initiated"
+    fi
+}
+
+# Main installation
+main() {
+    install_nodejs
+    install_aws_cli
+    install_cdk
+    install_jq
+    install_docker
+    
+    print_success "🎉 Prerequisites installation completed!"
+    echo ""
+    echo "Next steps:"
+    echo "1. Configure AWS credentials: aws configure"
+    echo "2. Deploy the system: ./deploy.sh production your-email@company.com"
+    echo ""
+    echo "Required AWS permissions:"
+    echo "- CloudFormation, Lambda, DynamoDB, API Gateway"
+    echo "- Cognito, S3, OpenSearch, Bedrock, Amplify"
+    echo "- IAM, CloudWatch, SES, EventBridge, SQS"
+}
+
+# Run installation
+main
