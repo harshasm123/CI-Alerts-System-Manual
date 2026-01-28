@@ -10,7 +10,7 @@ set -e
 ENVIRONMENT=${1:-production}
 ADMIN_EMAIL=${2:-admin@example.com}
 ACTION=${3:-deploy}
-REGION=${AWS_DEFAULT_REGION:-us-east-1}
+REGION=${AWS_DEFAULT_REGION:-us-west-2}
 
 # Colors
 RED='\033[0;31m'
@@ -44,43 +44,13 @@ bootstrap_cdk() {
     
     ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
     
-    # Check if bootstrap exists and is working
+    # Check if bootstrap exists
     if aws cloudformation describe-stacks --stack-name CDKToolkit --region $REGION >/dev/null 2>&1; then
-        STACK_STATUS=$(aws cloudformation describe-stacks --stack-name CDKToolkit --query 'Stacks[0].StackStatus' --output text --region $REGION)
-        
-        if [ "$STACK_STATUS" = "CREATE_COMPLETE" ] || [ "$STACK_STATUS" = "UPDATE_COMPLETE" ]; then
-            print_success "CDK already bootstrapped and working"
-            return 0
-        else
-            print_warning "CDK bootstrap exists but in state: $STACK_STATUS"
-            print_status "Attempting to fix bootstrap..."
-            
-            # Try to delete and recreate
-            aws cloudformation delete-stack --stack-name CDKToolkit --region $REGION 2>/dev/null || true
-            
-            # Wait for deletion
-            print_status "Waiting for stack deletion..."
-            aws cloudformation wait stack-delete-complete --stack-name CDKToolkit --region $REGION 2>/dev/null || true
-            
-            # Clean up any remaining resources
-            print_status "Cleaning up bootstrap resources..."
-            
-            # Delete ECR repository if exists
-            aws ecr delete-repository --repository-name cdk-hnb659fds-container-assets-$ACCOUNT_ID-$REGION --force --region $REGION 2>/dev/null || true
-            
-            # Delete S3 bucket contents and bucket
-            BUCKET_NAME="cdk-hnb659fds-assets-$ACCOUNT_ID-$REGION"
-            aws s3 rm s3://$BUCKET_NAME --recursive 2>/dev/null || true
-            aws s3 rb s3://$BUCKET_NAME --force 2>/dev/null || true
-            
-            # Delete SSM parameter
-            aws ssm delete-parameter --name "/cdk-bootstrap/hnb659fds/version" --region $REGION 2>/dev/null || true
-            
-            sleep 10
-        fi
+        print_success "CDK already bootstrapped - skipping"
+        return 0
     fi
     
-    # Bootstrap CDK
+    # Try to bootstrap/update (this will update existing or create new)
     print_status "Bootstrapping CDK for account $ACCOUNT_ID in region $REGION..."
     cdk bootstrap aws://$ACCOUNT_ID/$REGION --region $REGION
     print_success "CDK bootstrap completed"
