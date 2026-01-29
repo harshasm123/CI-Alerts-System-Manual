@@ -25,15 +25,12 @@ export class AmplifyStack extends cdk.Stack {
       ? secretsmanager.Secret.fromSecretNameV2(this, 'GitHubToken', props.githubToken)
       : undefined;
 
-    // Get the secret value
-    const tokenValue = githubToken ? githubToken.secretValue.toString() : undefined;
-
     // Amplify App
     const amplifyApp = new amplify.CfnApp(this, 'CIAlertAmplifyApp', {
       name: 'ci-alert-frontend',
       description: 'Pharmaceutical CI Platform - React TypeScript Frontend',
       repository: props?.repositoryUrl || 'https://github.com/harshasm123/CI-Alerts-System-Manual',
-      accessToken: tokenValue,
+      accessToken: githubToken?.secretValue.unsafeUnwrap(),
       platform: 'WEB_COMPUTE',
       
       // Build settings for React TypeScript
