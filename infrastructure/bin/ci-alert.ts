@@ -29,9 +29,8 @@ const amplifyStack = new AmplifyStack(app, 'CIAlert-Amplify', {
   apiUrl: coreStack.apiUrl,
   userPoolId: coreStack.userPoolId,
   userPoolClientId: coreStack.userPoolClientId,
-  repositoryUrl: process.env.GITHUB_REPO_URL,
-  githubToken: process.env.GITHUB_TOKEN_SECRET_NAME,
-  domainName: process.env.DOMAIN_NAME,
+  repositoryUrl: 'https://github.com/harshasm123/CI-Alerts-System-Manual',
+  githubToken: 'github-token',
   tags: {
     Environment: environment,
     Project: 'CIAlert',

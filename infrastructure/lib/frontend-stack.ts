@@ -1,321 +1,74 @@
 import * as cdk from 'aws-cdk-lib';
-import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as ecs from 'aws-cdk-lib/aws-ecs';
-import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
-import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
-import * as certificatemanager from 'aws-cdk-lib/aws-certificatemanager';
-import * as route53 from 'aws-cdk-lib/aws-route53';
-import * as route53targets from 'aws-cdk-lib/aws-route53-targets';
-import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
-import * as logs from 'aws-cdk-lib/aws-logs';
-import * as path from 'path';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
 
 export interface FrontendStackProps extends cdk.StackProps {
-  readonly domainName?: string;
-  readonly certificateArn?: string;
   readonly apiUrl?: string;
   readonly userPoolId?: string;
   readonly userPoolClientId?: string;
 }
 
 export class FrontendStack extends cdk.Stack {
-  public readonly loadBalancerUrl: string;
-  public readonly albDnsName: string;
+  public readonly frontendUrl: string;
+  public readonly bucketName: string;
+
   constructor(scope: Construct, id: string, props?: FrontendStackProps) {
     super(scope, id, props);
 
-    // Create VPC for production-grade deployment
-    const vpc = new ec2.Vpc(this, 'FrontendVPC', {
-      maxAzs: 2,
-      natGateways: 1,
-      subnetConfiguration: [
-        {
-          cidrMask: 24,
-          name: 'Public',
-          subnetType: ec2.SubnetType.PUBLIC,
-        },
-        {
-          cidrMask: 24,
-          name: 'Private',
-          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-        },
-      ],
-    });
-
-    // ECS Cluster with container insights
-    const cluster = new ecs.Cluster(this, 'FrontendCluster', {
-      vpc,
-      clusterName: 'ci-alert-frontend-cluster',
-      containerInsights: true,
-    });
-
-    // CloudWatch Log Group
-    const logGroup = new logs.LogGroup(this, 'FrontendLogGroup', {
-      logGroupName: '/ecs/ci-alert-frontend',
-      retention: logs.RetentionDays.ONE_WEEK,
+    // S3 bucket for hosting React app
+    const websiteBucket = new s3.Bucket(this, 'WebsiteBucket', {
+      bucketName: `ci-alert-frontend-${this.account}-${this.region}`,
+      websiteIndexDocument: 'index.html',
+      websiteErrorDocument: 'index.html',
+      publicReadAccess: true,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ACLS,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // Build Docker image from frontend directory with build args
-    const apiUrl = props?.apiUrl || '';
-    const userPoolId = props?.userPoolId || '';
-    const userPoolClientId = props?.userPoolClientId || '';
-    
-    const frontendImage = new ecr_assets.DockerImageAsset(this, 'FrontendImage', {
-      directory: path.join(__dirname, '../../frontend'),
-      file: 'Dockerfile',
-      buildArgs: {
-        REACT_APP_API_URL: apiUrl,
-        REACT_APP_USER_POOL_ID: userPoolId,
-        REACT_APP_USER_POOL_CLIENT_ID: userPoolClientId,
-        REACT_APP_REGION: this.region,
+    // CloudFront distribution
+    const distribution = new cloudfront.Distribution(this, 'Distribution', {
+      defaultBehavior: {
+        origin: new origins.S3Origin(websiteBucket),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
       },
-      invalidation: {
-        buildArgs: true,
-      },
-    });
-
-    // Fargate Task Definition with proper resource allocation
-    const taskDefinition = new ecs.FargateTaskDefinition(this, 'FrontendTask', {
-      memoryLimitMiB: 1024,
-      cpu: 512,
-      runtimePlatform: {
-        operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
-        cpuArchitecture: ecs.CpuArchitecture.X86_64,
-      },
-    });
-
-    // Add container to task with production configuration
-    const container = taskDefinition.addContainer('FrontendContainer', {
-      image: ecs.ContainerImage.fromDockerImageAsset(frontendImage),
-      logging: ecs.LogDrivers.awsLogs({ 
-        logGroup,
-        streamPrefix: 'frontend',
-      }),
-      healthCheck: {
-        command: ['CMD-SHELL', 'curl -f http://localhost:8080/ || exit 1'],
-        interval: cdk.Duration.seconds(30),
-        timeout: cdk.Duration.seconds(5),
-        retries: 3,
-        startPeriod: cdk.Duration.seconds(60),
-      },
-    });
-
-    container.addPortMappings({
-      containerPort: 8080,
-      protocol: ecs.Protocol.TCP,
-    });
-
-    // Fargate Service with auto-scaling
-    const service = new ecs.FargateService(this, 'FrontendService', {
-      cluster,
-      taskDefinition,
-      desiredCount: 2,
-      minHealthyPercent: 50,
-      maxHealthyPercent: 200,
-      assignPublicIp: false, // Deploy in private subnets
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-      },
-      enableExecuteCommand: true, // For debugging
-    });
-
-    // Auto Scaling
-    const scaling = service.autoScaleTaskCount({
-      minCapacity: 2,
-      maxCapacity: 10,
-    });
-
-    scaling.scaleOnCpuUtilization('CpuScaling', {
-      targetUtilizationPercent: 70,
-      scaleInCooldown: cdk.Duration.minutes(5),
-      scaleOutCooldown: cdk.Duration.minutes(2),
-    });
-
-    scaling.scaleOnMemoryUtilization('MemoryScaling', {
-      targetUtilizationPercent: 80,
-    });
-
-    // Application Load Balancer with security groups
-    const albSecurityGroup = new ec2.SecurityGroup(this, 'ALBSecurityGroup', {
-      vpc,
-      description: 'Security group for CI Alert ALB',
-      allowAllOutbound: true,
-    });
-
-    albSecurityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(80),
-      'Allow HTTP traffic'
-    );
-
-    albSecurityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
-      ec2.Port.tcp(443),
-      'Allow HTTPS traffic'
-    );
-
-    const alb = new elbv2.ApplicationLoadBalancer(this, 'FrontendALB', {
-      vpc,
-      internetFacing: true,
-      loadBalancerName: 'ci-alert-frontend-alb',
-      securityGroup: albSecurityGroup,
-      deletionProtection: false, // Set to true in production
-    });
-
-    // Target Group with advanced health checks
-    const targetGroup = new elbv2.ApplicationTargetGroup(this, 'FrontendTargetGroup', {
-      vpc,
-      port: 8080,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      targetType: elbv2.TargetType.IP,
-      healthCheck: {
-        enabled: true,
-        path: '/',
-        interval: cdk.Duration.seconds(30),
-        timeout: cdk.Duration.seconds(5),
-        healthyThresholdCount: 2,
-        unhealthyThresholdCount: 3,
-        healthyHttpCodes: '200',
-      },
-      deregistrationDelay: cdk.Duration.seconds(30),
-    });
-
-    targetGroup.addTarget(service);
-
-    // HTTP Listener (redirects to HTTPS if certificate available)
-    const httpListener = alb.addListener('HttpListener', {
-      port: 80,
-      open: true,
-      defaultAction: props?.certificateArn
-        ? elbv2.ListenerAction.redirect({
-            protocol: 'HTTPS',
-            port: '443',
-            permanent: true,
-          })
-        : elbv2.ListenerAction.forward([targetGroup]),
-    });
-
-    // HTTPS Listener (if certificate provided)
-    if (props?.certificateArn) {
-      const certificate = certificatemanager.Certificate.fromCertificateArn(
-        this,
-        'Certificate',
-        props.certificateArn
-      );
-
-      alb.addListener('HttpsListener', {
-        port: 443,
-        certificates: [certificate],
-        defaultAction: elbv2.ListenerAction.forward([targetGroup]),
-      });
-    }
-
-    // WAF Web ACL for security
-    const webAcl = new wafv2.CfnWebACL(this, 'FrontendWebACL', {
-      scope: 'REGIONAL',
-      defaultAction: { allow: {} },
-      rules: [
+      defaultRootObject: 'index.html',
+      errorResponses: [
         {
-          name: 'AWSManagedRulesCommonRuleSet',
-          priority: 1,
-          overrideAction: { none: {} },
-          statement: {
-            managedRuleGroupStatement: {
-              vendorName: 'AWS',
-              name: 'AWSManagedRulesCommonRuleSet',
-            },
-          },
-          visibilityConfig: {
-            sampledRequestsEnabled: true,
-            cloudWatchMetricsEnabled: true,
-            metricName: 'CommonRuleSetMetric',
-          },
+          httpStatus: 404,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html',
         },
         {
-          name: 'RateLimitRule',
-          priority: 2,
-          action: { block: {} },
-          statement: {
-            rateBasedStatement: {
-              limit: 2000,
-              aggregateKeyType: 'IP',
-            },
-          },
-          visibilityConfig: {
-            sampledRequestsEnabled: true,
-            cloudWatchMetricsEnabled: true,
-            metricName: 'RateLimitMetric',
-          },
+          httpStatus: 403,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html',
         },
       ],
-      visibilityConfig: {
-        sampledRequestsEnabled: true,
-        cloudWatchMetricsEnabled: true,
-        metricName: 'FrontendWebACL',
-      },
     });
 
-    // Associate WAF with ALB
-    new wafv2.CfnWebACLAssociation(this, 'WebACLAssociation', {
-      resourceArn: alb.loadBalancerArn,
-      webAclArn: webAcl.attrArn,
-    });
-
-    this.albDnsName = alb.loadBalancerDnsName;
-    this.loadBalancerUrl = props?.domainName
-      ? `https://${props.domainName}`
-      : props?.certificateArn
-      ? `https://${alb.loadBalancerDnsName}`
-      : `http://${alb.loadBalancerDnsName}`;
-
-    // Route53 DNS (if domain provided)
-    if (props?.domainName) {
-      const hostedZone = route53.HostedZone.fromLookup(this, 'HostedZone', {
-        domainName: props.domainName.split('.').slice(-2).join('.'), // Get root domain
-      });
-
-      new route53.ARecord(this, 'AliasRecord', {
-        zone: hostedZone,
-        recordName: props.domainName,
-        target: route53.RecordTarget.fromAlias(
-          new route53targets.LoadBalancerTarget(alb)
-        ),
-      });
-    }
-
-    // ALB is the primary frontend endpoint
+    this.frontendUrl = `https://${distribution.distributionDomainName}`;
+    this.bucketName = websiteBucket.bucketName;
 
     // Outputs
-    new cdk.CfnOutput(this, 'LoadBalancerURL', {
-      value: this.loadBalancerUrl,
-      description: 'Application Load Balancer URL',
-      exportName: 'CIAlert-LoadBalancerURL',
+    new cdk.CfnOutput(this, 'FrontendURL', {
+      value: this.frontendUrl,
+      description: 'Frontend Application URL',
+      exportName: 'CIAlert-Frontend-URL',
     });
 
-    new cdk.CfnOutput(this, 'LoadBalancerDNS', {
-      value: alb.loadBalancerDnsName,
-      description: 'ALB DNS Name',
-      exportName: 'CIAlert-ALB-DNS',
+    new cdk.CfnOutput(this, 'BucketName', {
+      value: this.bucketName,
+      description: 'S3 Bucket for Frontend',
+      exportName: 'CIAlert-Frontend-Bucket',
     });
 
-    new cdk.CfnOutput(this, 'VPCId', {
-      value: vpc.vpcId,
-      description: 'VPC ID',
-      exportName: 'CIAlert-VPC-ID',
-    });
-
-    new cdk.CfnOutput(this, 'ClusterName', {
-      value: cluster.clusterName,
-      description: 'ECS Cluster Name',
-      exportName: 'CIAlert-Cluster-Name',
-    });
-
-    new cdk.CfnOutput(this, 'ServiceName', {
-      value: service.serviceName,
-      description: 'ECS Service Name',
-      exportName: 'CIAlert-Service-Name',
+    new cdk.CfnOutput(this, 'DistributionId', {
+      value: distribution.distributionId,
+      description: 'CloudFront Distribution ID',
     });
   }
 }

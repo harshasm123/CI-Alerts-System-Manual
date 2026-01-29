@@ -29,7 +29,7 @@ export class AmplifyStack extends cdk.Stack {
     const amplifyApp = new amplify.CfnApp(this, 'CIAlertAmplifyApp', {
       name: 'ci-alert-frontend',
       description: 'Pharmaceutical CI Platform - React TypeScript Frontend',
-      repository: props?.repositoryUrl || 'https://github.com/your-org/ci-alert-system',
+      repository: props?.repositoryUrl || 'https://github.com/harshasm123/CI-Alerts-System-Manual',
       accessToken: githubToken?.secretValue.unsafeUnwrap(),
       platform: 'WEB_COMPUTE',
       
