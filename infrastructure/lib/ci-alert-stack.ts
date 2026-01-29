@@ -12,6 +12,11 @@ import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 import { Construct } from 'constructs';
 
 export class CIAlertStack extends cdk.Stack {
+  public readonly apiUrl: string;
+  public readonly userPoolId: string;
+  public readonly userPoolClientId: string;
+  public readonly dataBucket: s3.Bucket;
+
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
@@ -187,6 +192,46 @@ export class CIAlertStack extends cdk.Stack {
       },
     });
 
+    const emaFunction = new lambda.Function(this, 'EMAFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'ema_ingestion.handler',
+      code: lambda.Code.fromAsset('../lambdas/ingestion', {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+          command: [
+            'bash', '-c',
+            'pip install -r requirements.txt -t /asset-output && cp -au . /asset-output'
+          ],
+        },
+      }),
+      timeout: cdk.Duration.seconds(90),
+      role: lambdaRole,
+      environment: {
+        QUEUE_URL: eventQueue.queueUrl,
+        DATA_BUCKET: dataBucket.bucketName,
+      },
+    });
+
+    const wipoFunction = new lambda.Function(this, 'WIPOFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'wipo_ingestion.handler',
+      code: lambda.Code.fromAsset('../lambdas/ingestion', {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+          command: [
+            'bash', '-c',
+            'pip install -r requirements.txt -t /asset-output && cp -au . /asset-output'
+          ],
+        },
+      }),
+      timeout: cdk.Duration.seconds(120),
+      role: lambdaRole,
+      environment: {
+        QUEUE_URL: eventQueue.queueUrl,
+        DATA_BUCKET: dataBucket.bucketName,
+      },
+    });
+
     // Daily Digest Lambda
     const digestFunction = new lambda.Function(this, 'DigestFunction', {
       runtime: lambda.Runtime.PYTHON_3_12,
@@ -245,6 +290,20 @@ export class CIAlertStack extends cdk.Stack {
       environment: {
         AGENT_ID: process.env.AGENT_ID || 'placeholder',
         AGENT_ALIAS_ID: process.env.AGENT_ALIAS_ID || 'TSTALIASID',
+        AGENTCORE_ENABLED: process.env.AGENTCORE_ENABLED || 'false',
+        AGENTCORE_WORKFLOW_ID: process.env.AGENTCORE_WORKFLOW_ID || 'ci_analysis',
+        RESEARCH_AGENTS: JSON.stringify({
+          pubmed_scout: 'Scientific literature analysis',
+          regulatory_monitor: 'FDA/EMA regulatory tracking',
+          trial_tracker: 'Clinical trial monitoring',
+          patent_watcher: 'Patent landscape analysis'
+        }),
+        ANALYSIS_AGENTS: JSON.stringify({
+          risk_assessor: 'Competitive threat analysis',
+          opportunity_spotter: 'Market gap identification',
+          trend_analyzer: 'Pattern recognition',
+          impact_calculator: 'Business impact assessment'
+        }),
       },
     });
 
@@ -299,6 +358,21 @@ export class CIAlertStack extends cdk.Stack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
 
+    // AgentCore endpoints for multi-agent workflows
+    const agentcoreResource = api.root.addResource('agentcore');
+    agentcoreResource.addResource('analyze').addMethod('POST', new apigateway.LambdaIntegration(agentFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+    agentcoreResource.addResource('workflow').addMethod('POST', new apigateway.LambdaIntegration(agentFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+    agentcoreResource.addResource('status').addMethod('GET', new apigateway.LambdaIntegration(agentFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
     // Trigger ingestion endpoint
     const triggerIngestionResource = api.root.addResource('trigger-ingestion');
     triggerIngestionResource.addMethod('POST', new apigateway.LambdaIntegration(pubmedFunction), {
@@ -329,11 +403,29 @@ export class CIAlertStack extends cdk.Stack {
     });
     fdaRule.addTarget(new targets.LambdaFunction(fdaFunction));
 
+    // EMA ingestion rule
+    const emaRule = new events.Rule(this, 'EMAIngestionRule', {
+      schedule: events.Schedule.cron({ hour: '17', minute: '45' }),
+    });
+    emaRule.addTarget(new targets.LambdaFunction(emaFunction));
+
+    // WIPO ingestion rule (weekly on Sundays)
+    const wipoRule = new events.Rule(this, 'WIPOIngestionRule', {
+      schedule: events.Schedule.cron({ hour: '18', minute: '0', weekDay: 'SUN' }),
+    });
+    wipoRule.addTarget(new targets.LambdaFunction(wipoFunction));
+
     // EventBridge Rule for daily digest (10 AM IST = 4:30 AM UTC)
     const dailyDigestRule = new events.Rule(this, 'DailyDigestRule', {
       schedule: events.Schedule.cron({ hour: '4', minute: '30' }),
     });
     dailyDigestRule.addTarget(new targets.LambdaFunction(digestFunction));
+
+    // Set public properties
+    this.apiUrl = api.url;
+    this.userPoolId = userPool.userPoolId;
+    this.userPoolClientId = userPoolClient.userPoolClientId;
+    this.dataBucket = dataBucket;
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {

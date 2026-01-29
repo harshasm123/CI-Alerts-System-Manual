@@ -11,15 +11,14 @@ import { CICDStack } from '../lib/cicd-stack';
 
 const app = new cdk.App();
 
-// Environment configuration
 const environment = process.env.ENVIRONMENT || 'development';
 const adminEmail = process.env.ADMIN_EMAIL || 'admin@example.com';
-const region = process.env.AWS_DEFAULT_REGION || 'us-east-1';
+const region = process.env.AWS_DEFAULT_REGION || 'us-west-2';
 const account = process.env.CDK_DEFAULT_ACCOUNT;
 
 const env = { account, region };
 
-// Core stack with DynamoDB, Lambda, API Gateway, Cognito
+// Core stack
 const coreStack = new CIAlertStack(app, 'CIAlertStack', {
   env,
   description: 'CI Alert System - Core Infrastructure',
@@ -30,10 +29,10 @@ const coreStack = new CIAlertStack(app, 'CIAlertStack', {
   },
 });
 
-// Knowledge Base stack with S3 and OpenSearch Serverless
+// Knowledge Base stack
 const knowledgeBaseStack = new KnowledgeBaseStack(app, 'CIAlert-KnowledgeBase', {
   env,
-  description: 'CI Alert System - Knowledge Base (S3 + OpenSearch)',
+  description: 'CI Alert System - Knowledge Base',
   tags: {
     Environment: environment,
     Project: 'CIAlert',
@@ -44,7 +43,7 @@ const knowledgeBaseStack = new KnowledgeBaseStack(app, 'CIAlert-KnowledgeBase', 
 // Bedrock Agent stack
 const bedrockAgentStack = new BedrockAgentStack(app, 'CIAlert-BedrockAgent', {
   env,
-  description: 'CI Alert System - Bedrock Agent with RAG',
+  description: 'CI Alert System - Bedrock Agent',
   knowledgeBaseId: knowledgeBaseStack.knowledgeBaseId,
   dataSourceBucket: knowledgeBaseStack.dataSourceBucket,
   tags: {
@@ -54,7 +53,7 @@ const bedrockAgentStack = new BedrockAgentStack(app, 'CIAlert-BedrockAgent', {
   },
 });
 
-// Amplify Frontend stack (replaces ECS)
+// Amplify Frontend stack
 const amplifyStack = new AmplifyStack(app, 'CIAlert-Amplify', {
   env,
   description: 'CI Alert System - Amplify Frontend',
@@ -71,7 +70,7 @@ const amplifyStack = new AmplifyStack(app, 'CIAlert-Amplify', {
   },
 });
 
-// Production enhancements (only for production environment)
+// Production enhancements
 if (environment === 'production') {
   const productionStack = new ProductionStack(app, 'CIAlert-Production', {
     env,
@@ -85,10 +84,9 @@ if (environment === 'production') {
     },
   });
 
-  // Monitoring stack
   const monitoringStack = new MonitoringStack(app, 'CIAlert-Monitoring', {
     env,
-    description: 'CI Alert System - Monitoring and Alerting',
+    description: 'CI Alert System - Monitoring',
     coreStack: coreStack,
     amplifyStack: amplifyStack,
     adminEmail: adminEmail,
@@ -99,7 +97,6 @@ if (environment === 'production') {
     },
   });
 
-  // CI/CD Pipeline stack
   const cicdStack = new CICDStack(app, 'CIAlert-CICD', {
     env,
     description: 'CI Alert System - CI/CD Pipeline',
@@ -112,7 +109,6 @@ if (environment === 'production') {
     },
   });
 
-  // Stack dependencies
   productionStack.addDependency(coreStack);
   productionStack.addDependency(amplifyStack);
   monitoringStack.addDependency(coreStack);
@@ -120,12 +116,9 @@ if (environment === 'production') {
   cicdStack.addDependency(coreStack);
 }
 
-// Stack dependencies
 knowledgeBaseStack.addDependency(coreStack);
 bedrockAgentStack.addDependency(knowledgeBaseStack);
 amplifyStack.addDependency(coreStack);
 
-// Add stack tags
 cdk.Tags.of(app).add('Project', 'CIAlert');
 cdk.Tags.of(app).add('Environment', environment);
-cdk.Tags.of(app).add('ManagedBy', 'CDK');

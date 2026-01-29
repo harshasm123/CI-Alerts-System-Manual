@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 sqs = boto3.client('sqs')
 s3 = boto3.client('s3')
 
-QUEUE_URL = os.environ['RAW_EVENT_QUEUE_URL']
+QUEUE_URL = os.environ['QUEUE_URL']
 DATA_BUCKET = os.environ['DATA_BUCKET']
 
 # EMA RSS feeds
