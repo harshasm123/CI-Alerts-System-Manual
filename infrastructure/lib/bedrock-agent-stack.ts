@@ -1,1 +1,23 @@
-import * as cdk from 'aws-cdk-lib';\nimport * as s3 from 'aws-cdk-lib/aws-s3';\nimport { Construct } from 'constructs';\n\nexport interface BedrockAgentStackProps extends cdk.StackProps {\n  readonly knowledgeBaseId: string;\n  readonly dataSourceBucket: s3.Bucket;\n}\n\nexport class BedrockAgentStack extends cdk.Stack {\n  public readonly agentId: string;\n\n  constructor(scope: Construct, id: string, props: BedrockAgentStackProps) {\n    super(scope, id, props);\n\n    // Placeholder for agent ID (to be created manually)\n    this.agentId = 'placeholder-agent-id';\n\n    // Outputs\n    new cdk.CfnOutput(this, 'BedrockAgentId', {\n      value: this.agentId,\n      description: 'Bedrock Agent ID',\n    });\n  }\n}
+import * as cdk from 'aws-cdk-lib';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import { Construct } from 'constructs';
+
+export interface BedrockAgentStackProps extends cdk.StackProps {
+  readonly knowledgeBaseId: string;
+  readonly dataSourceBucket: s3.Bucket;
+}
+
+export class BedrockAgentStack extends cdk.Stack {
+  public readonly agentId: string;
+
+  constructor(scope: Construct, id: string, props: BedrockAgentStackProps) {
+    super(scope, id, props);
+
+    this.agentId = 'placeholder-agent-id';
+
+    new cdk.CfnOutput(this, 'BedrockAgentId', {
+      value: this.agentId,
+      description: 'Bedrock Agent ID',
+    });
+  }
+}

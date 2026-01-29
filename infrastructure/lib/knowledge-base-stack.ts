@@ -1,1 +1,25 @@
-import * as cdk from 'aws-cdk-lib';\nimport * as s3 from 'aws-cdk-lib/aws-s3';\nimport { Construct } from 'constructs';\n\nexport class KnowledgeBaseStack extends cdk.Stack {\n  public readonly knowledgeBaseId: string;\n  public readonly dataSourceBucket: s3.Bucket;\n\n  constructor(scope: Construct, id: string, props?: cdk.StackProps) {\n    super(scope, id, props);\n\n    // S3 bucket for knowledge base documents\n    this.dataSourceBucket = new s3.Bucket(this, 'KnowledgeBaseBucket', {\n      encryption: s3.BucketEncryption.S3_MANAGED,\n      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,\n      removalPolicy: cdk.RemovalPolicy.RETAIN,\n    });\n\n    // Placeholder for knowledge base ID (to be created manually)\n    this.knowledgeBaseId = 'placeholder-kb-id';\n\n    // Outputs\n    new cdk.CfnOutput(this, 'KnowledgeBaseBucketName', {\n      value: this.dataSourceBucket.bucketName,\n      description: 'Knowledge Base S3 Bucket Name',\n    });\n  }\n}
+import * as cdk from 'aws-cdk-lib';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import { Construct } from 'constructs';
+
+export class KnowledgeBaseStack extends cdk.Stack {
+  public readonly knowledgeBaseId: string;
+  public readonly dataSourceBucket: s3.Bucket;
+
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+    super(scope, id, props);
+
+    this.dataSourceBucket = new s3.Bucket(this, 'KnowledgeBaseBucket', {
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    this.knowledgeBaseId = 'placeholder-kb-id';
+
+    new cdk.CfnOutput(this, 'KnowledgeBaseBucketName', {
+      value: this.dataSourceBucket.bucketName,
+      description: 'Knowledge Base S3 Bucket Name',
+    });
+  }
+}
