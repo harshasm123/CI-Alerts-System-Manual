@@ -16,6 +16,9 @@ export class CIAlertStack extends cdk.Stack {
   public readonly userPoolId: string;
   public readonly userPoolClientId: string;
   public readonly dataBucket: s3.Bucket;
+  public readonly api: apigateway.RestApi;
+  public readonly lambdaFunctions: { [key: string]: lambda.Function };
+  public readonly dynamoTables: { [key: string]: dynamodb.Table };
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -456,6 +459,27 @@ export class CIAlertStack extends cdk.Stack {
     this.userPoolId = userPool.userPoolId;
     this.userPoolClientId = userPoolClient.userPoolClientId;
     this.dataBucket = dataBucket;
+    this.api = api;
+    this.lambdaFunctions = {
+      'PubMedFunction': pubmedFunction,
+      'ClinicalTrialsFunction': clinicalTrialsFunction,
+      'FDAFunction': fdaFunction,
+      'EMAFunction': emaFunction,
+      'WIPOFunction': wipoFunction,
+      'ProcessorFunction': processorFunction,
+      'DigestFunction': digestFunction,
+      'WatchlistFunction': watchlistFunction,
+      'InsightsFunction': insightsFunction,
+      'UserSettingsFunction': userSettingsFunction,
+      'MoleculesFunction': moleculesFunction,
+      'AgentFunction': agentFunction
+    };
+    this.dynamoTables = {
+      'InsightsTable': insightsTable,
+      'WatchlistTable': watchlistTable,
+      'MoleculesTable': moleculesTable,
+      'UserSettingsTable': userSettingsTable
+    };
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
