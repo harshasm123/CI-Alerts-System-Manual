@@ -40,20 +40,14 @@ check_prerequisites() {
 
 # Bootstrap CDK
 bootstrap_cdk() {
-    print_status "Checking CDK bootstrap..."
+    print_status "Updating CDK bootstrap..."
     
     ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
     
-    # Check if bootstrap exists
-    if aws cloudformation describe-stacks --stack-name CDKToolkit --region $REGION >/dev/null 2>&1; then
-        print_success "CDK already bootstrapped - skipping"
-        return 0
-    fi
-    
-    # Try to bootstrap/update (this will update existing or create new)
-    print_status "Bootstrapping CDK for account $ACCOUNT_ID in region $REGION..."
-    cdk bootstrap aws://$ACCOUNT_ID/$REGION --region $REGION
-    print_success "CDK bootstrap completed"
+    # Force bootstrap update to latest version
+    print_status "Updating CDK bootstrap for account $ACCOUNT_ID in region $REGION..."
+    cdk bootstrap aws://$ACCOUNT_ID/$REGION --region $REGION --force
+    print_success "CDK bootstrap updated to latest version"
 }
 
 # Install dependencies
