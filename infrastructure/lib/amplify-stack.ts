@@ -25,12 +25,10 @@ export class AmplifyStack extends cdk.Stack {
       ? secretsmanager.Secret.fromSecretNameV2(this, 'GitHubToken', props.githubToken)
       : undefined;
 
-    // Amplify App
+    // Amplify App (without GitHub integration for now)
     const amplifyApp = new amplify.CfnApp(this, 'CIAlertAmplifyApp', {
       name: 'ci-alert-frontend',
       description: 'Pharmaceutical CI Platform - React TypeScript Frontend',
-      repository: props?.repositoryUrl || 'https://github.com/harshasm123/CI-Alerts-System-Manual',
-      accessToken: githubToken?.secretValue.unsafeUnwrap(),
       platform: 'WEB_COMPUTE',
       
       // Build settings for React TypeScript
@@ -70,10 +68,6 @@ frontend:
           name: 'REACT_APP_REGION',
           value: this.region,
         },
-        {
-          name: '_LIVE_UPDATES',
-          value: '[{"name":"Amplify CLI","pkg":"@aws-amplify/cli","type":"npm","version":"latest"}]',
-        },
       ],
 
       // IAM service role for Amplify
@@ -89,48 +83,16 @@ frontend:
       ],
     });
 
-    // Main branch
+    // Main branch (manual deployment)
     const mainBranch = new amplify.CfnBranch(this, 'MainBranch', {
       appId: amplifyApp.attrAppId,
       branchName: 'main',
-      enableAutoBuild: true,
-      enablePerformanceMode: true,
+      enableAutoBuild: false,
       framework: 'React',
       stage: 'PRODUCTION',
     });
 
-    // Development branch
-    new amplify.CfnBranch(this, 'DevBranch', {
-      appId: amplifyApp.attrAppId,
-      branchName: 'development',
-      enableAutoBuild: true,
-      enablePullRequestPreview: true,
-      framework: 'React',
-      stage: 'DEVELOPMENT',
-    });
-
-    // Custom domain (if provided)
-    if (props?.domainName) {
-      const domain = new amplify.CfnDomain(this, 'AmplifyDomain', {
-        appId: amplifyApp.attrAppId,
-        domainName: props.domainName,
-        subDomainSettings: [
-          {
-            branchName: mainBranch.branchName,
-            prefix: '',
-          },
-          {
-            branchName: 'development',
-            prefix: 'dev',
-          },
-        ],
-        enableAutoSubDomain: true,
-      });
-
-      this.amplifyAppUrl = `https://${props.domainName}`;
-    } else {
-      this.amplifyAppUrl = `https://${mainBranch.branchName}.${amplifyApp.attrAppId}.amplifyapp.com`;
-    }
+    this.amplifyAppUrl = `https://${mainBranch.branchName}.${amplifyApp.attrAppId}.amplifyapp.com`;
 
     this.amplifyAppId = amplifyApp.attrAppId;
 

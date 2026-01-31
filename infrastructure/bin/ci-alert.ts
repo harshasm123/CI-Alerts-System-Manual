@@ -3,11 +3,7 @@ import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { CIAlertStack } from '../lib/ci-alert-stack';
 import { AmplifyStack } from '../lib/amplify-stack';
-import { CICDStack } from '../lib/cicd-stack';
-import { KnowledgeBaseStack } from '../lib/knowledge-base-stack';
-import { BedrockAgentStack } from '../lib/bedrock-agent-stack';
-import { ProductionStack } from '../lib/production-stack';
-import { MonitoringStack } from '../lib/stacks/monitoring-stack';
+import { ECSCICDStack } from '../lib/ecs-cicd-stack';
 
 const app = new cdk.App();
 
@@ -29,31 +25,7 @@ const coreStack = new CIAlertStack(app, 'CIAlertStack', {
   },
 });
 
-// Knowledge Base Stack
-const knowledgeBaseStack = new KnowledgeBaseStack(app, 'CIAlert-KnowledgeBase', {
-  env,
-  description: 'CI Alert System - Knowledge Base (OpenSearch + Bedrock)',
-  tags: {
-    Environment: environment,
-    Project: 'CIAlert',
-    Component: 'KnowledgeBase',
-  },
-});
-
-// Bedrock Agent Stack
-const bedrockAgentStack = new BedrockAgentStack(app, 'CIAlert-BedrockAgent', {
-  env,
-  description: 'CI Alert System - Bedrock Agent',
-  knowledgeBaseId: knowledgeBaseStack.knowledgeBaseId,
-  dataSourceBucket: knowledgeBaseStack.dataSourceBucket,
-  tags: {
-    Environment: environment,
-    Project: 'CIAlert',
-    Component: 'BedrockAgent',
-  },
-});
-
-// Amplify Frontend Stack
+// Amplify Frontend Stack (Serverless)
 const amplifyStack = new AmplifyStack(app, 'CIAlert-Amplify', {
   env,
   description: 'CI Alert System - Amplify Frontend',
@@ -69,54 +41,28 @@ const amplifyStack = new AmplifyStack(app, 'CIAlert-Amplify', {
   },
 });
 
-// Production enhancements (only for production environment)
-if (environment === 'production') {
-  // Production Stack
-  const productionStack = new ProductionStack(app, 'CIAlert-Production', {
+// ECS CI/CD Stack (Container-based with full CI/CD)
+if (process.env.GITHUB_TOKEN) {
+  const ecsCicdStack = new ECSCICDStack(app, 'CIAlert-ECS-CICD', {
     env,
-    description: 'CI Alert System - Production Enhancements',
-    apiGateway: coreStack.api,
-    lambdaFunctions: coreStack.lambdaFunctions,
-    adminEmail: adminEmail,
+    description: 'CI Alert System - ECS with CI/CD Pipeline',
+    githubToken: process.env.GITHUB_TOKEN,
+    githubOwner: process.env.GITHUB_OWNER || 'harshasm123',
+    githubRepo: process.env.GITHUB_REPO || 'CI-Alerts-System-Manual',
+    apiUrl: coreStack.apiUrl,
+    userPoolId: coreStack.userPoolId,
+    userPoolClientId: coreStack.userPoolClientId,
     tags: {
       Environment: environment,
       Project: 'CIAlert',
-      Component: 'Production',
+      Component: 'ECS-CICD',
     },
   });
-
-  // Monitoring Stack
-  const monitoringStack = new MonitoringStack(app, 'CIAlert-Monitoring', {
-    env,
-    description: 'CI Alert System - Monitoring & Dashboards',
-    lambdaFunctions: coreStack.lambdaFunctions,
-    apiGateway: coreStack.api,
-    dynamoTables: coreStack.dynamoTables,
-    adminEmail: adminEmail,
-    tags: {
-      Environment: environment,
-      Project: 'CIAlert',
-      Component: 'Monitoring',
-    },
-  });
-
-  // CI/CD Pipeline Stack
-  const cicdStack = new CICDStack(app, 'CIAlert-CICD', {
-    env,
-    description: 'CI Alert System - CI/CD Pipeline',
-    repositoryUrl: 'https://github.com/harshasm123/CI-Alerts-System-Manual',
-    githubToken: 'github-token',
-    tags: {
-      Environment: environment,
-      Project: 'CIAlert',
-      Component: 'CICD',
-    },
-  });
+  
+  ecsCicdStack.addDependency(coreStack);
 }
 
-// Dependencies
 amplifyStack.addDependency(coreStack);
-bedrockAgentStack.addDependency(knowledgeBaseStack);
 
 cdk.Tags.of(app).add('Project', 'CIAlert');
 cdk.Tags.of(app).add('Environment', environment);
