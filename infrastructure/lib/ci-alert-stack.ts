@@ -43,6 +43,12 @@ export class CIAlertStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
+    const moleculesTable = new dynamodb.Table(this, 'MoleculesTable', {
+      partitionKey: { name: 'molecule', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
     const userSettingsTable = new dynamodb.Table(this, 'UserSettingsTable', {
       partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -102,6 +108,7 @@ export class CIAlertStack extends cdk.Stack {
 
     insightsTable.grantReadWriteData(lambdaRole);
     watchlistTable.grantReadWriteData(lambdaRole);
+    moleculesTable.grantReadWriteData(lambdaRole);
     userSettingsTable.grantReadWriteData(lambdaRole);
     dataBucket.grantReadWrite(lambdaRole);
     eventQueue.grantSendMessages(lambdaRole);
@@ -127,6 +134,7 @@ export class CIAlertStack extends cdk.Stack {
       role: lambdaRole,
       environment: {
         INSIGHTS_TABLE: insightsTable.tableName,
+        MOLECULES_TABLE: moleculesTable.tableName,
         DATA_BUCKET: dataBucket.bucketName,
       },
     });
@@ -281,6 +289,18 @@ export class CIAlertStack extends cdk.Stack {
       },
     });
 
+    const moleculesFunction = new lambda.Function(this, 'MoleculesFunction', {
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'molecules_api.lambda_handler',
+      code: lambda.Code.fromAsset('../lambdas/api'),
+      timeout: cdk.Duration.seconds(30),
+      role: lambdaRole,
+      environment: {
+        MOLECULES_TABLE: moleculesTable.tableName,
+        QUEUE_URL: eventQueue.queueUrl,
+      },
+    });
+
     const agentFunction = new lambda.Function(this, 'AgentFunction', {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: 'agent_api.lambda_handler',
@@ -348,6 +368,16 @@ export class CIAlertStack extends cdk.Stack {
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });
     userSettingsResource.addMethod('PUT', new apigateway.LambdaIntegration(userSettingsFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+
+    const moleculesResource = api.root.addResource('molecules');
+    moleculesResource.addMethod('POST', new apigateway.LambdaIntegration(moleculesFunction), {
+      authorizer,
+      authorizationType: apigateway.AuthorizationType.COGNITO,
+    });
+    moleculesResource.addMethod('GET', new apigateway.LambdaIntegration(moleculesFunction), {
       authorizer,
       authorizationType: apigateway.AuthorizationType.COGNITO,
     });

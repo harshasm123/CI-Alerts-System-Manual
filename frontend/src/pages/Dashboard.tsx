@@ -28,6 +28,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 
+import AddMolecule from '../components/AddMolecule';
+
 const Dashboard: React.FC = () => {
   // Mock data for charts
   const activityData = [
@@ -146,6 +148,10 @@ const Dashboard: React.FC = () => {
               ))}
             </List>
           </Paper>
+        </Grid>
+        
+        <Grid item xs={12}>
+          <AddMolecule />
         </Grid>
       </Grid>
     </Box>
