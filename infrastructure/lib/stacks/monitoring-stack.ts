@@ -190,12 +190,40 @@ export class MonitoringStack extends cdk.Stack {
         new cloudwatch.GraphWidget({
           title: `${name} - Read/Write Operations`,
           left: [
-            table.metricSuccessfulRequestLatency({ operation: dynamodb.Operation.GET_ITEM }),
-            table.metricSuccessfulRequestLatency({ operation: dynamodb.Operation.QUERY })
+            new cloudwatch.Metric({
+              namespace: 'AWS/DynamoDB',
+              metricName: 'SuccessfulRequestLatency',
+              dimensionsMap: {
+                TableName: table.tableName,
+                Operation: 'GetItem'
+              }
+            }),
+            new cloudwatch.Metric({
+              namespace: 'AWS/DynamoDB',
+              metricName: 'SuccessfulRequestLatency',
+              dimensionsMap: {
+                TableName: table.tableName,
+                Operation: 'Query'
+              }
+            })
           ],
           right: [
-            table.metricSuccessfulRequestLatency({ operation: dynamodb.Operation.PUT_ITEM }),
-            table.metricSuccessfulRequestLatency({ operation: dynamodb.Operation.UPDATE_ITEM })
+            new cloudwatch.Metric({
+              namespace: 'AWS/DynamoDB',
+              metricName: 'SuccessfulRequestLatency',
+              dimensionsMap: {
+                TableName: table.tableName,
+                Operation: 'PutItem'
+              }
+            }),
+            new cloudwatch.Metric({
+              namespace: 'AWS/DynamoDB',
+              metricName: 'SuccessfulRequestLatency',
+              dimensionsMap: {
+                TableName: table.tableName,
+                Operation: 'UpdateItem'
+              }
+            })
           ],
           width: 12,
           height: 6,
