@@ -2,7 +2,7 @@
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { CIAlertStack } from '../lib/ci-alert-stack';
-import { AmplifyStack } from '../lib/amplify-stack';
+import { CloudFrontStack } from '../lib/cloudfront-stack';
 import { ECSCICDStack } from '../lib/ecs-cicd-stack';
 
 const app = new cdk.App();
@@ -25,15 +25,14 @@ const coreStack = new CIAlertStack(app, 'CIAlertStack', {
   },
 });
 
-// Amplify Frontend Stack (Serverless)
-const amplifyStack = new AmplifyStack(app, 'CIAlert-Amplify', {
+// CloudFront Frontend Stack (S3 + CloudFront)
+const cloudFrontStack = new CloudFrontStack(app, 'CIAlert-Frontend', {
   env,
-  description: 'CI Alert System - Amplify Frontend',
+  description: 'CI Alert System - CloudFront Frontend',
   apiUrl: coreStack.apiUrl,
   userPoolId: coreStack.userPoolId,
   userPoolClientId: coreStack.userPoolClientId,
-  repositoryUrl: 'https://github.com/harshasm123/CI-Alerts-System-Manual',
-  githubToken: 'github-token',
+  region: region,
   tags: {
     Environment: environment,
     Project: 'CIAlert',
@@ -62,7 +61,7 @@ if (process.env.GITHUB_TOKEN) {
   ecsCicdStack.addDependency(coreStack);
 }
 
-amplifyStack.addDependency(coreStack);
+cloudFrontStack.addDependency(coreStack);
 
 cdk.Tags.of(app).add('Project', 'CIAlert');
 cdk.Tags.of(app).add('Environment', environment);

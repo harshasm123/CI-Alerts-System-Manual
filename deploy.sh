@@ -81,9 +81,15 @@ deploy_infrastructure() {
     print_status "Deploying Bedrock agent (Claude 3.5 Sonnet + Actions)..."
     cdk deploy CIAlert-BedrockAgent --require-approval never --outputs-file outputs/agent.json
     
-    # Deploy Amplify frontend (React TypeScript + Material UI)
-    print_status "Deploying Amplify frontend..."
-    cdk deploy CIAlert-Amplify --require-approval never --outputs-file outputs/amplify.json
+    # Deploy CloudFront frontend (React TypeScript + Material UI)
+    print_status "Deploying CloudFront frontend..."
+    
+    # Build frontend first
+    cd ../frontend
+    npm run build
+    cd ../infrastructure
+    
+    cdk deploy CIAlert-Frontend --require-approval never --outputs-file outputs/frontend.json
     
     if [ "$ENVIRONMENT" = "production" ]; then
         print_status "Deploying production enhancements (WAF + Monitoring)..."
@@ -104,26 +110,10 @@ configure_services() {
     aws ses verify-email-identity --email-address $ADMIN_EMAIL --region $REGION 2>/dev/null || true
     print_status "Email verification sent to $ADMIN_EMAIL"
     
-    # Configure Amplify with environment variables
-    if [ -f "infrastructure/outputs/amplify.json" ]; then
-        AMPLIFY_APP_ID=$(jq -r '.["CIAlert-Amplify"].AmplifyAppId' infrastructure/outputs/amplify.json 2>/dev/null || echo "")
-        
-        if [ -n "$AMPLIFY_APP_ID" ] && [ "$AMPLIFY_APP_ID" != "null" ]; then
-            API_URL=$(jq -r '.CIAlertStack.ApiGatewayUrl' infrastructure/outputs/core.json 2>/dev/null || echo "")
-            USER_POOL_ID=$(jq -r '.CIAlertStack.UserPoolId' infrastructure/outputs/core.json 2>/dev/null || echo "")
-            USER_POOL_CLIENT_ID=$(jq -r '.CIAlertStack.UserPoolClientId' infrastructure/outputs/core.json 2>/dev/null || echo "")
-            
-            # Update Amplify environment variables for React TypeScript app
-            aws amplify update-app \
-                --app-id $AMPLIFY_APP_ID \
-                --environment-variables \
-                REACT_APP_API_URL=$API_URL,REACT_APP_USER_POOL_ID=$USER_POOL_ID,REACT_APP_USER_POOL_CLIENT_ID=$USER_POOL_CLIENT_ID,REACT_APP_REGION=$REGION \
-                2>/dev/null || true
-            
-            # Trigger build for React TypeScript frontend
-            aws amplify start-job --app-id $AMPLIFY_APP_ID --branch-name main --job-type RELEASE 2>/dev/null || true
-            print_success "Amplify React TypeScript app configured"
-        fi
+    # Configure CloudFront with environment variables
+    if [ -f "infrastructure/outputs/frontend.json" ]; then
+        CLOUDFRONT_URL=$(jq -r '.["CIAlert-Frontend"].CloudFrontUrl' infrastructure/outputs/frontend.json 2>/dev/null || echo "")
+        print_success "CloudFront frontend deployed: $CLOUDFRONT_URL"
     fi
     
     # Create test user
@@ -173,15 +163,15 @@ run_tests() {
         fi
     fi
     
-    # Test Amplify React TypeScript app
-    if [ -f "infrastructure/outputs/amplify.json" ]; then
-        AMPLIFY_URL=$(jq -r '.["CIAlert-Amplify"].AmplifyAppURL' infrastructure/outputs/amplify.json 2>/dev/null || echo "")
+    # Test CloudFront React TypeScript app
+    if [ -f "infrastructure/outputs/frontend.json" ]; then
+        CLOUDFRONT_URL=$(jq -r '.["CIAlert-Frontend"].CloudFrontUrl' infrastructure/outputs/frontend.json 2>/dev/null || echo "")
         
-        if [ -n "$AMPLIFY_URL" ] && [ "$AMPLIFY_URL" != "null" ]; then
-            if curl -f -s "$AMPLIFY_URL" >/dev/null 2>&1; then
+        if [ -n "$CLOUDFRONT_URL" ] && [ "$CLOUDFRONT_URL" != "null" ]; then
+            if curl -f -s "$CLOUDFRONT_URL" >/dev/null 2>&1; then
                 print_success "React TypeScript frontend accessible"
             else
-                print_warning "Frontend building (check Amplify console)"
+                print_warning "Frontend test failed"
             fi
         fi
     fi
@@ -221,12 +211,11 @@ get_status() {
         echo "Core Stack: NOT_DEPLOYED"
     fi
     
-    # Amplify status
-    if [ -f "infrastructure/outputs/amplify.json" ]; then
-        AMPLIFY_APP_ID=$(jq -r '.["CIAlert-Amplify"].AmplifyAppId' infrastructure/outputs/amplify.json 2>/dev/null || echo "")
-        if [ -n "$AMPLIFY_APP_ID" ] && [ "$AMPLIFY_APP_ID" != "null" ]; then
-            AMPLIFY_STATUS=$(aws amplify get-app --app-id $AMPLIFY_APP_ID --query 'app.defaultDomain' --output text 2>/dev/null || echo "ERROR")
-            echo "Amplify App: $AMPLIFY_STATUS"
+    # CloudFront status
+    if [ -f "infrastructure/outputs/frontend.json" ]; then
+        CLOUDFRONT_URL=$(jq -r '.["CIAlert-Frontend"].CloudFrontUrl' infrastructure/outputs/frontend.json 2>/dev/null || echo "")
+        if [ -n "$CLOUDFRONT_URL" ] && [ "$CLOUDFRONT_URL" != "null" ]; then
+            echo "CloudFront: $CLOUDFRONT_URL"
         fi
     fi
     
@@ -239,9 +228,9 @@ get_status() {
         [ -n "$API_URL" ] && [ "$API_URL" != "null" ] && echo "API Gateway: $API_URL"
     fi
     
-    if [ -f "infrastructure/outputs/amplify.json" ]; then
-        AMPLIFY_URL=$(jq -r '.["CIAlert-Amplify"].AmplifyAppURL' infrastructure/outputs/amplify.json 2>/dev/null || echo "")
-        [ -n "$AMPLIFY_URL" ] && [ "$AMPLIFY_URL" != "null" ] && echo "Frontend: $AMPLIFY_URL"
+    if [ -f "infrastructure/outputs/frontend.json" ]; then
+        CLOUDFRONT_URL=$(jq -r '.["CIAlert-Frontend"].CloudFrontUrl' infrastructure/outputs/frontend.json 2>/dev/null || echo "")
+        [ -n "$CLOUDFRONT_URL" ] && [ "$CLOUDFRONT_URL" != "null" ] && echo "Frontend: $CLOUDFRONT_URL"
     fi
     
     echo ""
@@ -263,7 +252,7 @@ destroy_infrastructure() {
         cdk destroy CIAlert-Production --force 2>/dev/null || true
     fi
     
-    cdk destroy CIAlert-Amplify --force 2>/dev/null || true
+    cdk destroy CIAlert-Frontend --force 2>/dev/null || true
     cdk destroy CIAlert-BedrockAgent --force 2>/dev/null || true
     cdk destroy CIAlert-KnowledgeBase --force 2>/dev/null || true
     cdk destroy CIAlertStack --force 2>/dev/null || true
@@ -291,12 +280,10 @@ display_summary() {
         [ -n "$USER_POOL_ID" ] && [ "$USER_POOL_ID" != "null" ] && echo "User Pool: $USER_POOL_ID"
     fi
     
-    if [ -f "infrastructure/outputs/amplify.json" ]; then
-        AMPLIFY_URL=$(jq -r '.["CIAlert-Amplify"].AmplifyAppURL' infrastructure/outputs/amplify.json 2>/dev/null || echo "")
-        AMPLIFY_APP_ID=$(jq -r '.["CIAlert-Amplify"].AmplifyAppId' infrastructure/outputs/amplify.json 2>/dev/null || echo "")
+    if [ -f "infrastructure/outputs/frontend.json" ]; then
+        CLOUDFRONT_URL=$(jq -r '.["CIAlert-Frontend"].CloudFrontUrl' infrastructure/outputs/frontend.json 2>/dev/null || echo "")
         
-        [ -n "$AMPLIFY_URL" ] && [ "$AMPLIFY_URL" != "null" ] && echo "Frontend: $AMPLIFY_URL"
-        [ -n "$AMPLIFY_APP_ID" ] && [ "$AMPLIFY_APP_ID" != "null" ] && echo "Amplify App ID: $AMPLIFY_APP_ID"
+        [ -n "$CLOUDFRONT_URL" ] && [ "$CLOUDFRONT_URL" != "null" ] && echo "Frontend: $CLOUDFRONT_URL"
     fi
     
     echo ""
@@ -311,7 +298,7 @@ display_summary() {
     echo "✅ React TypeScript frontend with Material UI"
     echo "✅ Dynamic molecule tracking"
     echo "✅ Amazon Nova Lite AI processing ($0.06/1M tokens)"
-    echo "✅ Amplify serverless hosting"
+    echo "✅ CloudFront + S3 serverless hosting"
     echo "✅ OpenSearch Serverless knowledge base"
     echo "✅ Bedrock Agent with Claude 3.5 Sonnet"
     if [ "$ENVIRONMENT" = "production" ]; then

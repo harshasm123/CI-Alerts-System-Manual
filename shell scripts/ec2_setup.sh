@@ -79,4 +79,5 @@ echo ""
 echo "Next steps:"
 echo "1. Enable Bedrock models in AWS Console"
 echo "2. cd ~/CI-Alerts-System-Manual"
+
 echo "3. Run deployment: ./deploy.sh"
