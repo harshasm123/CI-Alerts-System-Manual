@@ -21,7 +21,17 @@ export class CloudFrontStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: CloudFrontStackProps) {
     super(scope, id, props);
 
-    // S3 bucket for frontend
+    // S3 bucket for frontend with logging
+    const logBucket = new s3.Bucket(this, 'LogBucket', {
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+      lifecycleRules: [{
+        enabled: true,
+        expiration: cdk.Duration.days(90),
+      }],
+    });
+
     this.bucket = new s3.Bucket(this, 'FrontendBucket', {
       bucketName: `ci-alert-frontend-${cdk.Aws.ACCOUNT_ID}`,
       websiteIndexDocument: 'index.html',
@@ -30,6 +40,10 @@ export class CloudFrontStack extends cdk.Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      versioned: true,
+      serverAccessLogsBucket: logBucket,
+      serverAccessLogsPrefix: 'frontend-access/',
     });
 
     // CloudFront Origin Access Identity
@@ -39,7 +53,7 @@ export class CloudFrontStack extends cdk.Stack {
 
     this.bucket.grantRead(oai);
 
-    // CloudFront distribution
+    // CloudFront distribution with security headers and logging
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       defaultBehavior: {
         origin: new origins.S3Origin(this.bucket, {
@@ -47,6 +61,15 @@ export class CloudFrontStack extends cdk.Stack {
         }),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        responseHeadersPolicy: new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeaders', {
+          securityHeadersBehavior: {
+            contentTypeOptions: { override: true },
+            frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
+            referrerPolicy: { referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN, override: true },
+            strictTransportSecurity: { accessControlMaxAge: cdk.Duration.seconds(31536000), includeSubdomains: true, override: true },
+            xssProtection: { protection: true, modeBlock: true, override: true },
+          },
+        }),
       },
       defaultRootObject: 'index.html',
       errorResponses: [
@@ -63,6 +86,11 @@ export class CloudFrontStack extends cdk.Stack {
           ttl: cdk.Duration.minutes(5),
         },
       ],
+      enableLogging: true,
+      logBucket: logBucket,
+      logFilePrefix: 'cloudfront/',
+      minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
     });
 
     // Deploy frontend (if build exists)

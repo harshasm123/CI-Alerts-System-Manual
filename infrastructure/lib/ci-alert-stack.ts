@@ -23,12 +23,14 @@ export class CIAlertStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // DynamoDB Tables
+    // DynamoDB Tables with point-in-time recovery
     const insightsTable = new dynamodb.Table(this, 'InsightsTable', {
       partitionKey: { name: 'molecule', type: dynamodb.AttributeType.STRING },
       sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
+      pointInTimeRecovery: true,
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
     });
 
     // Add GSI for querying by molecule
@@ -44,41 +46,57 @@ export class CIAlertStack extends cdk.Stack {
       sortKey: { name: 'molecule', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
+      pointInTimeRecovery: true,
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
     });
 
     const moleculesTable = new dynamodb.Table(this, 'MoleculesTable', {
       partitionKey: { name: 'molecule', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
+      pointInTimeRecovery: true,
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
     });
 
     const userSettingsTable = new dynamodb.Table(this, 'UserSettingsTable', {
       partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
+      pointInTimeRecovery: true,
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
     });
 
-    // S3 Buckets
+    // S3 Buckets with versioning and lifecycle
     const dataBucket = new s3.Bucket(this, 'DataBucket', {
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
+      versioned: true,
       lifecycleRules: [{
         enabled: true,
         transitions: [{
           storageClass: s3.StorageClass.INTELLIGENT_TIERING,
           transitionAfter: cdk.Duration.days(30),
         }],
+        noncurrentVersionExpiration: cdk.Duration.days(90),
       }],
     });
 
-    // SQS Queue
-    const eventQueue = new sqs.Queue(this, 'EventQueue', {
-      visibilityTimeout: cdk.Duration.seconds(300),
+    // SQS Queue with DLQ
+    const deadLetterQueue = new sqs.Queue(this, 'DeadLetterQueue', {
       retentionPeriod: cdk.Duration.days(14),
     });
 
-    // Cognito User Pool
+    const eventQueue = new sqs.Queue(this, 'EventQueue', {
+      visibilityTimeout: cdk.Duration.seconds(300),
+      retentionPeriod: cdk.Duration.days(14),
+      deadLetterQueue: {
+        queue: deadLetterQueue,
+        maxReceiveCount: 3,
+      },
+    });
+
+    // Cognito User Pool with advanced security
     const userPool = new cognito.UserPool(this, 'UserPool', {
       selfSignUpEnabled: true,
       signInAliases: { email: true },
@@ -90,6 +108,9 @@ export class CIAlertStack extends cdk.Stack {
         requireDigits: true,
         requireSymbols: true,
       },
+      accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+      advancedSecurityMode: cognito.AdvancedSecurityMode.ENFORCED,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
     const userPoolClient = userPool.addClient('AppClient', {
