@@ -129,29 +129,65 @@ bootstrap_cdk() {
     fi
 }
 
-# Install dependencies
+# Install dependencies with error handling
 install_dependencies() {
     print_status "Installing dependencies..."
     
     # Infrastructure dependencies
+    print_status "Installing infrastructure dependencies..."
     cd infrastructure
+    
     if [ -f "package-lock.json" ]; then
-        npm ci --silent
+        print_status "Using npm ci (clean install)..."
+        if ! npm ci 2>&1 | tee -a "../$LOG_FILE"; then
+            print_warning "npm ci failed, trying npm install..."
+            rm -f package-lock.json
+            npm install 2>&1 | tee -a "../$LOG_FILE" || {
+                print_error "Infrastructure npm install failed"
+                cd ..
+                return 1
+            }
+        fi
     else
-        npm install --silent
+        print_status "Using npm install..."
+        npm install 2>&1 | tee -a "../$LOG_FILE" || {
+            print_error "Infrastructure npm install failed"
+            cd ..
+            return 1
+        }
     fi
+    
+    print_success "Infrastructure dependencies installed"
     cd ..
     
     # Frontend dependencies
+    print_status "Installing frontend dependencies..."
     cd frontend
+    
     if [ -f "package-lock.json" ]; then
-        npm ci --silent
+        print_status "Using npm ci (clean install)..."
+        if ! npm ci 2>&1 | tee -a "../$LOG_FILE"; then
+            print_warning "npm ci failed, trying npm install..."
+            rm -f package-lock.json
+            npm install 2>&1 | tee -a "../$LOG_FILE" || {
+                print_error "Frontend npm install failed"
+                cd ..
+                return 1
+            }
+        fi
     else
-        npm install --silent
+        print_status "Using npm install..."
+        npm install 2>&1 | tee -a "../$LOG_FILE" || {
+            print_error "Frontend npm install failed"
+            cd ..
+            return 1
+        }
     fi
+    
+    print_success "Frontend dependencies installed"
     cd ..
     
-    print_success "Dependencies installed"
+    print_success "All dependencies installed successfully"
 }
 
 # Deploy infrastructure
